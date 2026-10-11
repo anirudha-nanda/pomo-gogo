@@ -129,22 +129,15 @@
     .pick select.chip { appearance: none; -webkit-appearance: none; border-style: dashed; color: var(--muted); max-width: 120px; }
     .pick .none { color: var(--muted); font-size: .75rem; }
     .task-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-    .tags { display: flex; flex-wrap: wrap; gap: 4px; }
-    .tag { font-size: .7rem; padding: 1px 7px; border-radius: 999px; color: #fff; background: var(--muted); }
-    .log-form {
-      flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-      padding-top: 6px; border-top: 1px dashed var(--track); font-size: .8rem; color: var(--muted);
-    }
-    .log-form input {
-      padding: 5px 6px; border-radius: 6px; border: 1px solid var(--track);
-      background: var(--card); color: var(--fg); font: inherit; min-width: 0;
-    }
-    .log-form input[type=number] { width: 52px; }
-    .log-form input[type=datetime-local] { flex: 1 1 170px; }
-    .log-form button { border: 0; border-radius: 6px; padding: 6px 12px; font: inherit; font-weight: 600; cursor: pointer; }
-    .log-form .go { background: var(--accent); color: #fff; }
-    .log-form .cancel { background: var(--track); color: var(--fg); font-weight: 400; }
-    .task .pick { flex-basis: 100%; padding-top: 4px; border-top: 1px dashed var(--track); }
+    .task-title[contenteditable] { cursor: text; border-radius: 4px; outline: none; padding: 0 2px; margin: 0 -2px; }
+    .task-title[contenteditable]:hover { box-shadow: inset 0 -1px 0 var(--muted); }
+    .task-title[contenteditable]:focus { background: var(--card); box-shadow: 0 0 0 2px var(--accent); text-decoration: none; color: var(--fg); }
+    .inline-pick { gap: 4px; }
+    .est { cursor: text; border-radius: 4px; padding: 0 3px; outline: none; box-shadow: inset 0 -1px 0 var(--muted); }
+    .est:focus { background: var(--card); box-shadow: 0 0 0 2px var(--accent); color: var(--fg); }
+    .inline-pick .chip { padding: 1px 7px; font-size: .7rem; }
+    .inline-pick select.chip { padding: 1px 6px; max-width: 90px; }
+    .task > .pick { flex-basis: 100%; padding-top: 4px; border-top: 1px dashed var(--track); }
     .add select {
       min-width: 0; padding: 8px 4px; border-radius: 8px;
       border: 1px solid var(--track); background: var(--bg); color: var(--fg); font: inherit; font-size: .85rem;
@@ -300,7 +293,6 @@
     // A task can belong to several projects: t.cats is a list of project ids (older saves used a single t.cat).
     tasks.forEach(t => { if (!Array.isArray(t.cats)) { t.cats = t.cat ? [t.cat] : []; delete t.cat; } });
     let newCats = load('pomo-newcats', null);       // projects preselected in the add form
-    let editingId = null;                           // task whose projects are being edited inline
 
     const $ = (id) => document.getElementById(id);
     const progress = document.querySelector('.progress');
@@ -455,7 +447,7 @@
     $('s-auto').onchange = (e) => { settings.auto = e.target.checked; save('pomo-settings', settings); };
 
     document.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') {
+      if (e.code === 'Space' && !e.target.isContentEditable && !['INPUT', 'BUTTON', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) {
         e.preventDefault();
         tick ? pause() : start();
       }
@@ -567,7 +559,7 @@
     }
 
     // Shows only the selected projects (tap one to remove it); a "+ Project" menu lists the others.
-    function projectPicker(selected, onChange) {
+    function projectPicker(selected, onChange, compact = false) {
       const frag = document.createDocumentFragment();
       const chosen = cats.filter(c => selected.includes(c.id));
       chosen.forEach(c => {
@@ -583,7 +575,7 @@
         b.onclick = (e) => { e.stopPropagation(); onChange(selected.filter(id => id !== c.id)); };
         frag.append(b);
       });
-      if (!chosen.length) {
+      if (!chosen.length && !compact) {
         const n = document.createElement('span'); n.className = 'none'; n.textContent = 'No project';
         frag.append(n);
       }
@@ -591,7 +583,8 @@
       const sel = document.createElement('select');
       sel.className = 'chip';
       sel.setAttribute('aria-label', 'Add a project');
-      sel.add(new Option('+ Project', ''));
+      sel.add(new Option(compact ? (chosen.length ? '+' : '+ project') : '+ Project', ''));
+      if (compact) { sel.title = 'Add a project'; sel.style.width = chosen.length ? '2.2em' : '5.6em'; sel.style.textAlign = 'center'; }
       rest.forEach(c => sel.add(new Option(c.name, c.id)));
       sel.add(new Option('New project…', '__new'));
       sel.onclick = (e) => e.stopPropagation();
@@ -610,11 +603,74 @@
       return 'linear-gradient(to bottom, ' + cs.map((c, k) => c.color + ' ' + (k * step) + '% ' + ((k + 1) * step) + '%').join(', ') + ')';
     }
 
+    // Tap a task's name to rename it in place. Enter or blur saves, Esc cancels.
+    // Saving doesn't rebuild the list, so a click that caused the blur still lands.
+    function editableTitle(el, t, li) {
+      el.contentEditable = 'plaintext-only';
+      if (el.contentEditable !== 'plaintext-only') el.contentEditable = 'true';
+      el.spellcheck = false;
+      el.setAttribute('role', 'textbox');
+      el.setAttribute('aria-label', 'Task name');
+      el.onclick = (e) => {
+        e.stopPropagation();
+        if (!t.done && activeId !== t.id) {
+          activeId = t.id; save('pomo-active', activeId);
+          document.querySelectorAll('.task.active').forEach(x => x.classList.remove('active'));
+          document.querySelectorAll('.task').forEach(x => { if (x.dataset.id === t.id) x.classList.add('active'); });
+          render();
+        }
+      };
+      el.onkeydown = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+        if (e.key === 'Escape') { el.textContent = t.title; el.blur(); }
+      };
+      el.onblur = () => {
+        const v = el.textContent.replace(/\s+/g, ' ').trim();
+        if (!v) { el.textContent = t.title; return; }
+        if (v === t.title) return;
+        t.title = v;
+        save('pomo-tasks', tasks);
+        document.querySelectorAll('.task').forEach(x => { if (x.dataset.id === t.id) x.querySelector('.task-title').textContent = v; });
+        render();
+      };
+    }
+
+    // Tap the estimate (the "3" in "1/3 🍅") to change it in place: 1–20.
+    function editableEstimate(el, t, count) {
+      el.contentEditable = 'true';
+      el.spellcheck = false;
+      el.inputMode = 'numeric';
+      el.setAttribute('role', 'textbox');
+      el.setAttribute('aria-label', 'Estimated pomodoros');
+      el.title = 'Tap to change the estimate';
+      el.onclick = (e) => e.stopPropagation();
+      el.onfocus = () => { const r = document.createRange(); r.selectNodeContents(el); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); };
+      el.onkeydown = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+        else if (e.key === 'Escape') { el.textContent = t.est; el.blur(); }
+        else if (e.key.length === 1 && !/[0-9]/.test(e.key) && !e.metaKey && !e.ctrlKey) e.preventDefault();
+      };
+      el.onblur = () => {
+        const v = parseInt(el.textContent, 10);
+        if (!(v >= 1)) { el.textContent = t.est; return; }
+        t.est = Math.min(20, v);
+        save('pomo-tasks', tasks);
+        document.querySelectorAll('.task').forEach(x => {
+          if (x.dataset.id !== t.id) return;
+          x.querySelector('.est').textContent = t.est;
+          x.querySelector('.task-count').classList.toggle('over', t.spent > t.est);
+        });
+        renderPlanStats();
+        document.querySelectorAll('.group-stats').forEach(groupStatsText);
+      };
+    }
+
     function taskItem(t, groupId) {
       const i = tasks.indexOf(t);
       const cs = catsOf(t);
       const li = document.createElement('li');
       li.className = 'task' + (t.id === activeId && !t.done ? ' active' : '') + (t.done ? ' done' : '');
+      li.dataset.id = t.id;
       const own = cs.find(c => c.id === groupId) || cs[0];
       if (own) li.style.setProperty('--cat', own.color);
       if (cs.length) li.style.background = stripe(cs) + ' left top / 5px 100% no-repeat, var(--bg)';
@@ -629,17 +685,20 @@
       main.className = 'task-main';
       const title = document.createElement('span');
       title.className = 'task-title'; title.textContent = t.title;
-      main.append(title);
-      if (cs.length > 1) {
-        // Shared task: list every project it counts toward.
-        const tags = document.createElement('span'); tags.className = 'tags';
-        cs.forEach(c => { const g = document.createElement('span'); g.className = 'tag'; g.style.background = c.color; g.textContent = c.name; tags.append(g); });
-        main.append(tags);
-      }
+      editableTitle(title, t, li);
+      // Projects are edited in place: tap a tag's ✕ to remove it, "+" to add one.
+      const tags = document.createElement('span');
+      tags.className = 'pick inline-pick';
+      tags.onclick = (e) => e.stopPropagation();
+      tags.append(projectPicker(t.cats, (ids) => { t.cats = ids; saveTasks(); render(); }, true));
+      main.append(title, tags);
 
       const count = document.createElement('span');
       count.className = 'task-count' + (t.spent > t.est ? ' over' : '');
-      count.textContent = t.spent + '/' + t.est + ' 🍅';
+      const est = document.createElement('span');
+      est.className = 'est'; est.textContent = t.est;
+      editableEstimate(est, t, count);
+      count.append(t.spent + '/', est, ' 🍅');
 
       const actions = document.createElement('span');
       actions.className = 'task-actions';
@@ -657,66 +716,27 @@
         }
       };
       actions.append(
-        btn('−', 'Decrease estimate', () => { t.est = Math.max(1, t.est - 1); }),
-        btn('+', 'Increase estimate', () => { t.est = Math.min(20, t.est + 1); }),
-        btn('🍅', 'Log pomodoros you did without the timer', () => { loggingId = loggingId === t.id ? null : t.id; }),
-        btn('🏷', 'Edit projects', () => { editingId = editingId === t.id ? null : t.id; }),
+        btn('🍅', 'Log 1 pomodoro done without the timer', () => logManual(t, 1, Date.now())),
         btn('↑', 'Move up', moveUp),
         btn('✕', 'Delete task', () => { tasks.splice(i, 1); pickNextActive(t.cats); })
       );
 
       li.onclick = () => { if (!t.done) { activeId = t.id; saveTasks(); render(); } };
       li.append(cb, main, count, actions);
-      if (editingId === t.id && groupId === editKey) {
-        const pick = document.createElement('div');
-        pick.className = 'pick';
-        pick.setAttribute('aria-label', 'Projects for this task');
-        pick.onclick = (e) => e.stopPropagation();
-        pick.append(projectPicker(t.cats, (ids) => { t.cats = ids; saveTasks(); render(); }));
-        li.append(pick);
-      }
-      if (loggingId === t.id && groupId === logKey) li.append(logForm(t));
       return li;
-    }
-
-    const pad = (n) => String(n).padStart(2, '0');
-    const localInput = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-
-    function logForm(t) {
-      const f = document.createElement('form');
-      f.className = 'log-form';
-      f.onclick = (e) => e.stopPropagation();
-      const n = document.createElement('input');
-      n.type = 'number'; n.min = 1; n.max = 12; n.value = 1; n.setAttribute('aria-label', 'Number of pomodoros');
-      const when = document.createElement('input');
-      when.type = 'datetime-local'; when.value = localInput(new Date()); when.max = localInput(new Date());
-      when.setAttribute('aria-label', 'Finished at');
-      const go = document.createElement('button'); go.type = 'submit'; go.className = 'go'; go.textContent = 'Log';
-      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'cancel'; cancel.textContent = 'Cancel';
-      cancel.onclick = () => { loggingId = null; renderTasks(); };
-      f.append('Log', n, '🍅 finished at', when, go, cancel);
-      f.onsubmit = (e) => {
-        e.preventDefault();
-        const count = Math.min(12, Math.max(1, parseInt(n.value, 10) || 1));
-        const at = Math.min(Date.now(), new Date(when.value).getTime() || Date.now());
-        loggingId = null;
-        logManual(t, count, at);
-      };
-      setTimeout(() => n.focus(), 0);
-      return f;
     }
 
     const sumLeft = (list) => list.filter(t => !t.done).reduce((n, t) => n + Math.max(0, t.est - t.spent), 0);
 
-    let editKey;   // group id in which the inline project editor is shown
-    let logKey;    // group id in which the inline "log pomodoros" form is shown
-    let loggingId = null;
-    // A shared task is listed in several groups; inline forms show only in the first group it appears in.
-    function firstGroupKey(shown, id) {
-      const t = tasks.find(x => x.id === id);
-      const g = t && shown.find(g => g.items.includes(t));
-      return g ? (g.cat ? g.cat.id : null) : undefined;
+    function groupStatsText(el) {
+      const cat = cats.find(c => c.id === el.dataset.cat) || null;
+      const items = cat ? tasks.filter(t => hasCat(t, cat.id)) : tasks.filter(noCat);
+      const planned = items.reduce((n, t) => n + t.est, 0);
+      const spent = items.reduce((n, t) => n + t.spent, 0);
+      el.textContent = (items.length ? spent + '/' + planned + ' 🍅 · ' + sumLeft(items) + ' left' : 'no tasks') +
+        (cat && cat.logged ? ' · ' + cat.logged + ' total' : '');
     }
+
     function renderTasks() {
       renderProjects();
       const list = $('task-list');
@@ -730,8 +750,6 @@
       if (!shown.length || !shown.some(g => g.items.length || g.cat)) {
         list.innerHTML = '<p class="empty">Add tasks and estimate how many pomodoros each needs.</p>';
       }
-      editKey = firstGroupKey(shown, editingId);
-      logKey = firstGroupKey(shown, loggingId);
       shown.forEach(g => {
         const sec = document.createElement('div');
         sec.className = 'group';
@@ -742,11 +760,9 @@
         const name = document.createElement('span'); name.className = 'group-name';
         name.textContent = g.cat ? g.cat.name : 'No project';
         const stats = document.createElement('small');
-        const planned = g.items.reduce((n, t) => n + t.est, 0);
-        const spent = g.items.reduce((n, t) => n + t.spent, 0);
-        const left = sumLeft(g.items);
-        stats.textContent = (g.items.length ? spent + '/' + planned + ' 🍅 · ' + left + ' left' : 'no tasks') +
-          (g.cat && g.cat.logged ? ' · ' + g.cat.logged + ' total' : '');
+        stats.className = 'group-stats';
+        stats.dataset.cat = g.cat ? g.cat.id : '';
+        groupStatsText(stats);
         stats.title = g.cat ? 'Done/planned for current tasks · all-time pomodoros logged to this project' : '';
         head.append(dot, name, stats);
         if (g.cat) {

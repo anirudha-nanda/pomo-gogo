@@ -12,14 +12,16 @@ pomodoros left and an estimated finish time, including breaks.
 Create one from a task's **+ Project → New project…** menu; rename or delete projects under
 **Settings → Projects**. Only projects that are on at least one task appear as filters. Each project has a color, its own done/planned/left counts, and an
 all-time total of pomodoros logged to it. A task can belong to **several projects** (e.g. *Island count* in both
-NeetCode and Interview prep): add projects from the **+ Project** menu when creating it, or use 🏷 on a task to
-change them later (only the selected projects are shown; tap one to remove it). A shared task is listed under each of its projects and every pomodoro on it is
+NeetCode and Interview prep): add projects from the **+ Project** menu when creating it, or edit the task's tags in place
+later (only the selected projects are shown; tap one to remove it). A shared task is listed under each of its projects and every pomodoro on it is
 credited to all of them, but it's counted once in the overall plan. Use the chips to filter the plan by project; the finish
 estimate follows the filter.
 
-**Forgot the timer?** Tap 🍅 on a task to log pomodoros you did without it: how many, and when
-they finished. They count toward the task, its projects and the stats (marked *manual*). Any
-session can be removed from the stats page if logged by mistake.
+**Edit in place:** tap a task's name to rename it, tap the estimate (the *3* in `1/3 🍅`) to change
+it, and use a task's project tags (✕ to remove, **+** to add) to change its projects.
+
+**Forgot the timer?** Tap 🍅 on a task to log one pomodoro for it right away. It counts toward the
+task, its projects and the stats (marked *manual*). Remove a mistaken one on the stats page.
 
 **Stats** (`stats.html`, linked from the timer): every completed focus session is logged with its
 time, length, task and projects. The page shows pomodoros, focus time, daily average, best day and
