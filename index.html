@@ -85,6 +85,12 @@
     .secondary { background: var(--track); color: var(--fg); }
     details { margin-top: 24px; text-align: left; }
     summary { cursor: pointer; color: var(--muted); }
+    .manage-title { font-size: .9rem; margin: 18px 0 6px; }
+    .manage { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+    .manage li { display: flex; align-items: center; gap: 8px; font-size: .9rem; }
+    .manage li span.name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .manage li small { color: var(--muted); white-space: nowrap; }
+    .manage button { border: 0; background: var(--track); color: var(--fg); border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font: inherit; }
     .settings { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 12px; align-items: center; }
     .settings input[type=number] {
       width: 72px; padding: 6px; border-radius: 8px;
@@ -132,7 +138,6 @@
       background: none; color: var(--fg); font: inherit; font-size: .8rem; cursor: pointer;
     }
     .chip[aria-pressed="true"] { background: var(--track); border-color: var(--fg); }
-    .chip.add-chip { color: var(--muted); border-style: dashed; }
     .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--muted); }
     .group { margin-top: 12px; }
     .group:first-child { margin-top: 0; }
@@ -227,6 +232,8 @@
         <label for="s-every">Long break every</label><input id="s-every" type="number" min="2" max="10">
         <label for="s-auto">Auto-start next</label><input id="s-auto" type="checkbox">
       </div>
+      <h3 class="manage-title">Projects</h3>
+      <ul id="manage-projects" class="manage"></ul>
     </details>
   </main>
 
@@ -429,17 +436,24 @@
       activeId = next ? next.id : null;
     }
 
+    // Creates a project (or reuses one with the same name, ignoring case). Returns its id, or null if cancelled.
     function addProject() {
       const name = (prompt('New project name (e.g. System design):') || '').trim();
-      if (!name) return;
-      const c = { id: uid(), name, color: CAT_COLORS[cats.length % CAT_COLORS.length], logged: 0 };
+      if (!name) return null;
+      const existing = cats.find(c => c.name.toLowerCase() === name.toLowerCase());
+      if (existing) return existing.id;
+      const used = new Set(cats.map(c => c.color));
+      const color = CAT_COLORS.find(col => !used.has(col)) || CAT_COLORS[cats.length % CAT_COLORS.length];
+      const c = { id: uid(), name, color, logged: 0 };
       cats.push(c);
-      filterCat = c.id;
-      saveTasks();
+      save('pomo-cats', cats);
+      return c.id;
     }
     function renameProject(c) {
       const name = (prompt('Rename project:', c.name) || '').trim();
-      if (name) { c.name = name; saveTasks(); render(); }
+      if (!name) return;
+      if (cats.some(x => x !== c && x.name.toLowerCase() === name.toLowerCase())) { alert('A project named "' + name + '" already exists.'); return; }
+      c.name = name; saveTasks(); render();
     }
     function deleteProject(c) {
       const n = tasks.filter(t => hasCat(t, c.id)).length;
@@ -452,7 +466,8 @@
     }
 
     function renderProjects() {
-      if (filterCat === 'none' ? !tasks.some(noCat) : filterCat !== 'all' && !cats.some(c => c.id === filterCat)) filterCat = 'all';
+      const inUse = cats.filter(c => tasks.some(t => hasCat(t, c.id)));
+      if (filterCat === 'none' ? !tasks.some(noCat) : filterCat !== 'all' && !inUse.some(c => c.id === filterCat)) filterCat = 'all';
       const bar = $('projects');
       bar.innerHTML = '';
       const chip = (id, label, color) => {
@@ -468,20 +483,40 @@
         };
         return b;
       };
+      // Only projects that are on at least one task are offered as filters.
       bar.append(chip('all', 'All'));
-      cats.forEach(c => bar.append(chip(c.id, c.name, c.color)));
-      if (tasks.some(noCat)) bar.append(chip('none', 'No project', ''));
-      const add = document.createElement('button');
-      add.type = 'button'; add.className = 'chip add-chip'; add.textContent = '+ Project';
-      add.onclick = addProject;
-      bar.append(add);
+      inUse.forEach(c => bar.append(chip(c.id, c.name, c.color)));
+      if (tasks.some(noCat) && inUse.length) bar.append(chip('none', 'No project', ''));
+      bar.hidden = !inUse.length;
+      renderManage();
 
       // Project picker in the add form: remembers the last selection; defaults to the filtered project.
-      if (newCats === null) newCats = cats[0] ? [cats[0].id] : [];
+      if (newCats === null) newCats = [];
       newCats = newCats.filter(id => cats.some(c => c.id === id));
       const box = $('task-cats');
       box.innerHTML = '';
       box.append(projectPicker(newCats, (ids) => { newCats = ids; save('pomo-newcats', newCats); renderProjects(); }));
+    }
+
+    function renderManage() {
+      const ul = $('manage-projects');
+      ul.innerHTML = '';
+      if (!cats.length) ul.innerHTML = '<li class="empty">No projects yet — add one from a task’s “+ Project” menu.</li>';
+      cats.forEach(c => {
+        const li = document.createElement('li');
+        const d = document.createElement('span'); d.className = 'dot'; d.style.background = c.color;
+        const name = document.createElement('span'); name.className = 'name'; name.textContent = c.name;
+        const n = tasks.filter(t => hasCat(t, c.id)).length;
+        const meta = document.createElement('small');
+        meta.textContent = (n ? n + ' task' + (n > 1 ? 's' : '') : 'unused') + (c.logged ? ' · ' + c.logged + ' 🍅' : '');
+        const mk = (label, aria, fn) => {
+          const b = document.createElement('button'); b.type = 'button';
+          b.textContent = label; b.title = aria; b.setAttribute('aria-label', aria + ' ' + c.name); b.onclick = fn;
+          return b;
+        };
+        li.append(d, name, meta, mk('✎', 'Rename', () => renameProject(c)), mk('✕', 'Delete', () => deleteProject(c)));
+        ul.append(li);
+      });
     }
 
     // Shows only the selected projects (tap one to remove it); a "+ Project" menu lists the others.
@@ -506,16 +541,19 @@
         frag.append(n);
       }
       const rest = cats.filter(c => !selected.includes(c.id));
-      if (rest.length) {
-        const sel = document.createElement('select');
-        sel.className = 'chip';
-        sel.setAttribute('aria-label', 'Add a project');
-        sel.add(new Option('+ Project', ''));
-        rest.forEach(c => sel.add(new Option(c.name, c.id)));
-        sel.onclick = (e) => e.stopPropagation();
-        sel.onchange = () => { if (sel.value) onChange([...selected, sel.value]); };
-        frag.append(sel);
-      }
+      const sel = document.createElement('select');
+      sel.className = 'chip';
+      sel.setAttribute('aria-label', 'Add a project');
+      sel.add(new Option('+ Project', ''));
+      rest.forEach(c => sel.add(new Option(c.name, c.id)));
+      sel.add(new Option('New project…', '__new'));
+      sel.onclick = (e) => e.stopPropagation();
+      sel.onchange = () => {
+        const id = sel.value === '__new' ? addProject() : sel.value;
+        if (id && !selected.includes(id)) onChange([...selected, id]);
+        else sel.value = '';
+      };
+      frag.append(sel);
       return frag;
     }
 

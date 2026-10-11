@@ -8,8 +8,9 @@ A dependency-free Pomodoro timer in a single `index.html`.
 the current one. Each finished focus session counts toward it (e.g. `2/3 🍅`), and the plan shows the
 pomodoros left and an estimated finish time, including breaks.
 
-**Projects:** group tasks into projects (seeded with *Interview prep*, *NeetCode*, *TrustAnchor*;
-add, rename or delete your own). Each project has a color, its own done/planned/left counts, and an
+**Projects:** group tasks into projects (seeded with *Interview prep*, *NeetCode*, *TrustAnchor*).
+Create one from a task's **+ Project → New project…** menu; rename or delete projects under
+**Settings → Projects**. Only projects that are on at least one task appear as filters. Each project has a color, its own done/planned/left counts, and an
 all-time total of pomodoros logged to it. A task can belong to **several projects** (e.g. *Island count* in both
 NeetCode and Interview prep): add projects from the **+ Project** menu when creating it, or use 🏷 on a task to
 change them later (only the selected projects are shown; tap one to remove it). A shared task is listed under each of its projects and every pomodoro on it is
