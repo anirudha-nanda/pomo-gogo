@@ -11,8 +11,8 @@ pomodoros left and an estimated finish time, including breaks.
 **Projects:** group tasks into projects (seeded with *Interview prep*, *NeetCode*, *TrustAnchor*;
 add, rename or delete your own). Each project has a color, its own done/planned/left counts, and an
 all-time total of pomodoros logged to it. A task can belong to **several projects** (e.g. *Island count* in both
-NeetCode and Interview prep): pick any number of projects when adding it, or use 🏷 on a task to
-change them later. A shared task is listed under each of its projects and every pomodoro on it is
+NeetCode and Interview prep): add projects from the **+ Project** menu when creating it, or use 🏷 on a task to
+change them later (only the selected projects are shown; tap one to remove it). A shared task is listed under each of its projects and every pomodoro on it is
 credited to all of them, but it's counted once in the overall plan. Use the chips to filter the plan by project; the finish
 estimate follows the filter.
 

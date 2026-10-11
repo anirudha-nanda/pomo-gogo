@@ -113,6 +113,9 @@
     .pick .chip { padding: 3px 8px; font-size: .75rem; }
     .pick .chip[aria-pressed="true"] { background: var(--chip, var(--track)); border-color: var(--chip, var(--fg)); color: #fff; }
     .pick .chip[aria-pressed="true"] .dot { background: #fff !important; }
+    .pick .chip .x { opacity: .8; margin-left: 2px; }
+    .pick select.chip { appearance: none; -webkit-appearance: none; border-style: dashed; color: var(--muted); max-width: 120px; }
+    .pick .none { color: var(--muted); font-size: .75rem; }
     .task-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
     .tags { display: flex; flex-wrap: wrap; gap: 4px; }
     .tag { font-size: .7rem; padding: 1px 7px; border-radius: 999px; color: #fff; background: var(--muted); }
@@ -481,23 +484,38 @@
       box.append(projectPicker(newCats, (ids) => { newCats = ids; save('pomo-newcats', newCats); renderProjects(); }));
     }
 
-    // Toggle chips for choosing any number of projects. Calls onChange with the new id list.
+    // Shows only the selected projects (tap one to remove it); a "+ Project" menu lists the others.
     function projectPicker(selected, onChange) {
       const frag = document.createDocumentFragment();
-      cats.forEach(c => {
+      const chosen = cats.filter(c => selected.includes(c.id));
+      chosen.forEach(c => {
         const b = document.createElement('button');
         b.type = 'button'; b.className = 'chip';
-        const on = selected.includes(c.id);
-        b.setAttribute('aria-pressed', on);
+        b.setAttribute('aria-pressed', 'true');
         b.style.setProperty('--chip', c.color);
-        const d = document.createElement('span'); d.className = 'dot'; d.style.background = c.color;
-        b.append(d, c.name);
-        b.onclick = (e) => {
-          e.stopPropagation();
-          onChange(on ? selected.filter(id => id !== c.id) : [...selected, c.id]);
-        };
+        b.title = 'Remove ' + c.name;
+        b.setAttribute('aria-label', 'Remove project ' + c.name);
+        const d = document.createElement('span'); d.className = 'dot';
+        const x = document.createElement('span'); x.className = 'x'; x.textContent = '✕';
+        b.append(d, c.name, x);
+        b.onclick = (e) => { e.stopPropagation(); onChange(selected.filter(id => id !== c.id)); };
         frag.append(b);
       });
+      if (!chosen.length) {
+        const n = document.createElement('span'); n.className = 'none'; n.textContent = 'No project';
+        frag.append(n);
+      }
+      const rest = cats.filter(c => !selected.includes(c.id));
+      if (rest.length) {
+        const sel = document.createElement('select');
+        sel.className = 'chip';
+        sel.setAttribute('aria-label', 'Add a project');
+        sel.add(new Option('+ Project', ''));
+        rest.forEach(c => sel.add(new Option(c.name, c.id)));
+        sel.onclick = (e) => e.stopPropagation();
+        sel.onchange = () => { if (sel.value) onChange([...selected, sel.value]); };
+        frag.append(sel);
+      }
       return frag;
     }
 
