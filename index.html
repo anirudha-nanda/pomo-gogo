@@ -42,7 +42,7 @@
     }
     main {
       width: 100%;
-      max-width: 420px;
+      max-width: 560px;
       background: var(--card);
       border-radius: 20px;
       padding: 28px 24px;
@@ -128,7 +128,8 @@
     .pick .chip .x { opacity: .8; margin-left: 2px; }
     .pick select.chip { appearance: none; -webkit-appearance: none; border-style: dashed; color: var(--muted); max-width: 120px; }
     .pick .none { color: var(--muted); font-size: .75rem; }
-    .task-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .task-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+    .task-main .task-title { flex: 1 1 90px; min-width: 0; }
     .task-title[contenteditable] { cursor: text; border-radius: 4px; outline: none; padding: 0 2px; margin: 0 -2px; }
     .task-title[contenteditable]:hover { box-shadow: inset 0 -1px 0 var(--muted); }
     .task-title[contenteditable]:focus { background: var(--card); box-shadow: 0 0 0 2px var(--accent); text-decoration: none; color: var(--fg); }
@@ -143,7 +144,9 @@
     .task.dragging .grip { cursor: grabbing; }
     .est { cursor: text; border-radius: 4px; padding: 0 3px; outline: none; box-shadow: inset 0 -1px 0 var(--muted); }
     .est:focus { background: var(--card); box-shadow: 0 0 0 2px var(--accent); color: var(--fg); }
-    .inline-pick .chip { padding: 1px 7px; font-size: .7rem; }
+    .inline-pick { flex-wrap: nowrap; min-width: 0; }
+    .inline-pick .chip { padding: 1px 7px; font-size: .7rem; gap: 4px; flex: none; white-space: nowrap; }
+    .inline-pick .chip .nm { display: inline-block; max-width: 6.5em; overflow: hidden; text-overflow: ellipsis; }
     .inline-pick select.chip { padding: 1px 6px; max-width: 90px; }
     .task > .pick { flex-basis: 100%; padding-top: 4px; border-top: 1px dashed var(--track); }
     .add select {
@@ -579,7 +582,8 @@
         b.setAttribute('aria-label', 'Remove project ' + c.name);
         const d = document.createElement('span'); d.className = 'dot';
         const x = document.createElement('span'); x.className = 'x'; x.textContent = '✕';
-        b.append(d, c.name, x);
+        const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = c.name;
+        b.append(d, nm, x);
         b.onclick = (e) => { e.stopPropagation(); onChange(selected.filter(id => id !== c.id)); };
         frag.append(b);
       });
@@ -591,8 +595,8 @@
       const sel = document.createElement('select');
       sel.className = 'chip';
       sel.setAttribute('aria-label', 'Add a project');
-      sel.add(new Option(compact ? (chosen.length ? '+' : '+ project') : '+ Project', ''));
-      if (compact) { sel.title = 'Add a project'; sel.style.width = chosen.length ? '2.2em' : '5.6em'; sel.style.textAlign = 'center'; }
+      sel.add(new Option(compact ? '+' : '+ Project', ''));
+      if (compact) { sel.title = 'Add a project'; sel.style.width = '2.2em'; sel.style.textAlign = 'center'; }
       rest.forEach(c => sel.add(new Option(c.name, c.id)));
       sel.add(new Option('New project…', '__new'));
       sel.onclick = (e) => e.stopPropagation();
@@ -699,7 +703,7 @@
       tags.className = 'pick inline-pick';
       tags.onclick = (e) => e.stopPropagation();
       tags.append(projectPicker(t.cats, (ids) => { t.cats = ids; saveTasks(); render(); }, true));
-      main.append(title, tags);
+      main.append(tags, title);
 
       const count = document.createElement('span');
       count.className = 'task-count' + (t.spent > t.est ? ' over' : '');
