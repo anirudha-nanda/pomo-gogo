@@ -698,7 +698,8 @@
       const est = document.createElement('span');
       est.className = 'est'; est.textContent = t.est;
       editableEstimate(est, t, count);
-      count.append(t.spent + '/', est, ' 🍅');
+      count.append(t.spent + '/', est);
+      count.title = 'Pomodoros done / estimated';
 
       const actions = document.createElement('span');
       actions.className = 'task-actions';

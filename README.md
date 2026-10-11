@@ -17,7 +17,7 @@ later (only the selected projects are shown; tap one to remove it). A shared tas
 credited to all of them, but it's counted once in the overall plan. Use the chips to filter the plan by project; the finish
 estimate follows the filter.
 
-**Edit in place:** tap a task's name to rename it, tap the estimate (the *3* in `1/3 🍅`) to change
+**Edit in place:** tap a task's name to rename it, tap the estimate (the *3* in `1/3`) to change
 it, and use a task's project tags (✕ to remove, **+** to add) to change its projects.
 
 **Forgot the timer?** Tap 🍅 on a task to log one pomodoro for it right away. It counts toward the
