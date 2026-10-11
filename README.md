@@ -17,6 +17,11 @@ change them later (only the selected projects are shown; tap one to remove it). 
 credited to all of them, but it's counted once in the overall plan. Use the chips to filter the plan by project; the finish
 estimate follows the filter.
 
+**Stats** (`stats.html`, linked from the timer): every completed focus session is logged with its
+time, length, task and projects. The page shows pomodoros, focus time, daily average, best day and
+current streak, plus pomodoros per day, a by-project breakdown, time of day and a session list,
+for the last 7 / 30 / 90 days or all time.
+
 Features: focus / short / long break modes, configurable durations, auto-start,
 completed-session counter, sound + desktop notification on finish, Space to start/pause,
 light/dark theme. Settings persist in `localStorage`.

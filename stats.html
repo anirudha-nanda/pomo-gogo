@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pomo Gogo Stats</title>
+  <meta name="description" content="Your completed pomodoros over time, by project and by time of day.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+  <style>
+    :root {
+      --bg: #fdf6f3;
+      --fg: #2b1d1a;
+      --muted: #7a6560;
+      --card: #ffffff;
+      --track: #f0e2dd;
+      --grid: #eee4e0;
+      --series-1: #2a78d6;
+      --seq-0: #f3ebe8;   /* empty cell */
+      --none: #9a8a86;    /* "No project" */
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1a1413;
+        --fg: #f5ebe8;
+        --muted: #b09a95;
+        --card: #241c1a;
+        --track: #3a2e2b;
+        --grid: #332926;
+        --series-1: #3987e5;
+        --seq-0: #2e2523;
+        --none: #8a7a76;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 16px;
+      background: var(--bg); color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 760px; margin: 0 auto; display: grid; gap: 16px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    header h1 { margin: 0; font-size: 1.4rem; }
+    header a { color: var(--fg); text-decoration: none; font-size: .9rem; border: 1px solid var(--track); padding: 6px 12px; border-radius: 999px; }
+    .ranges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .ranges button {
+      border: 1px solid var(--track); background: none; color: var(--fg); border-radius: 999px;
+      padding: 5px 12px; font: inherit; font-size: .85rem; cursor: pointer;
+    }
+    .ranges button[aria-pressed="true"] { background: var(--track); border-color: var(--fg); }
+    .card { background: var(--card); border-radius: 16px; padding: 18px; box-shadow: 0 6px 20px rgba(0,0,0,.06); min-width: 0; }
+    .card h2 { margin: 0 0 4px; font-size: 1rem; }
+    .card .sub { margin: 0 0 12px; color: var(--muted); font-size: .8rem; }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+    .tile { background: var(--card); border-radius: 14px; padding: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.06); }
+    .tile .k { color: var(--muted); font-size: .8rem; }
+    .tile .v { white-space: nowrap; font-size: clamp(1.3rem, 5vw, 1.6rem); font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .tile .h { color: var(--muted); font-size: .75rem; margin-top: 2px; }
+    .chart { position: relative; }
+    .chart svg { display: block; width: 100%; overflow: visible; }
+    .chart text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+    .chart .grid { stroke: var(--grid); stroke-width: 1; }
+    .chart .base { stroke: var(--muted); stroke-width: 1; opacity: .5; }
+    .chart .bar { fill: var(--series-1); pointer-events: none; }
+    .chart .hit { fill: transparent; cursor: default; }
+    .chart .hit:hover { fill: var(--grid); }
+    .tip {
+      position: absolute; pointer-events: none; z-index: 2;
+      background: var(--fg); color: var(--bg); border-radius: 8px; padding: 6px 9px;
+      font-size: .8rem; line-height: 1.3; white-space: nowrap; transform: translate(-50%, -100%);
+      opacity: 0; transition: opacity .1s;
+    }
+    .tip.on { opacity: 1; }
+    .proj { display: grid; gap: 10px; }
+    .proj-row { display: grid; grid-template-columns: minmax(80px, 34%) 1fr; gap: 10px; align-items: center; font-size: .9rem; }
+    .proj-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .proj-name span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+    .proj-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .proj-fill { height: 14px; border-radius: 0 4px 4px 0; min-width: 2px; }
+    .proj-val { color: var(--muted); font-size: .8rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .note { color: var(--muted); font-size: .8rem; margin: 10px 0 0; }
+    table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; font-size: .75rem; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    td .tag { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: .75rem; }
+    .empty { color: var(--muted); text-align: center; padding: 24px 8px; font-size: .9rem; }
+    .scroll { overflow-x: auto; }
+    .more { margin-top: 10px; border: 1px solid var(--track); background: none; color: var(--fg); border-radius: 999px; padding: 6px 14px; font: inherit; font-size: .85rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>📊 Stats</h1>
+      <a href="./">← Timer</a>
+    </header>
+    <div class="ranges" role="group" aria-label="Time range">
+      <button data-range="7">7 days</button>
+      <button data-range="30">30 days</button>
+      <button data-range="90">90 days</button>
+      <button data-range="all">All time</button>
+    </div>
+
+    <section class="tiles" aria-label="Summary">
+      <div class="tile"><div class="k">Pomodoros</div><div class="v" id="t-count">0</div><div class="h" id="t-count-h"></div></div>
+      <div class="tile"><div class="k">Focus time</div><div class="v" id="t-time">0m</div><div class="h">completed sessions</div></div>
+      <div class="tile"><div class="k">Daily average</div><div class="v" id="t-avg">0</div><div class="h" id="t-avg-h"></div></div>
+      <div class="tile"><div class="k">Best day</div><div class="v" id="t-best">–</div><div class="h" id="t-best-h"></div></div>
+      <div class="tile"><div class="k">Current streak</div><div class="v" id="t-streak">0</div><div class="h" id="t-streak-h">days in a row</div></div>
+    </section>
+
+    <section class="card">
+      <h2>Pomodoros per day</h2>
+      <p class="sub" id="daily-sub"></p>
+      <div class="chart" id="daily"></div>
+    </section>
+
+    <section class="card">
+      <h2>By project</h2>
+      <p class="sub">A task in several projects counts toward each of them.</p>
+      <div class="proj" id="projects"></div>
+    </section>
+
+    <section class="card">
+      <h2>Time of day</h2>
+      <p class="sub">When your focus sessions finished</p>
+      <div class="chart" id="hours"></div>
+    </section>
+
+    <section class="card">
+      <h2>Sessions</h2>
+      <p class="sub" id="table-sub"></p>
+      <div class="scroll" id="sessions"></div>
+    </section>
+  </main>
+
+  <script>
+    function load(key, fallback) {
+      try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; }
+    }
+    function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
+    const $ = (id) => document.getElementById(id);
+    const DAY = 86400000;
+
+    const log = load('pomo-log', []).filter(e => e && typeof e.at === 'number').sort((a, b) => a.at - b.at);
+    const cats = load('pomo-cats', []);
+    const catById = Object.fromEntries(cats.map(c => [c.id, c]));
+    let range = load('pomo-stats-range', '7');
+    let tableLimit = 15;
+
+    const startOfDay = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+    const addDays = (t, n) => { const d = new Date(t); d.setDate(d.getDate() + n); return d.getTime(); };
+    const dayKey = (t) => { const d = new Date(t); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+    const fmtDay = (t, opts) => new Date(t).toLocaleDateString([], opts || { month: 'short', day: 'numeric' });
+    const fmtMin = (m) => m >= 60 ? Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '') : m + 'm';
+    const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+
+    function rangeStart() {
+      const today = startOfDay(Date.now());
+      if (range === 'all') return log.length ? startOfDay(log[0].at) : today;
+      return addDays(today, -(parseInt(range, 10) - 1));
+    }
+
+    // ---- Tooltip shared by both SVG charts
+    function tipFor(container) {
+      let tip = container.querySelector('.tip');
+      if (!tip) { tip = document.createElement('div'); tip.className = 'tip'; tip.setAttribute('role', 'status'); container.append(tip); }
+      return tip;
+    }
+
+    // Vertical bar chart: one series, rounded top corners anchored to the baseline, hover tooltip per bar.
+    function barChart(container, data, { labelEvery = 1, label = (d) => d.label } = {}) {
+      container.innerHTML = '';
+      const W = Math.max(280, container.clientWidth), H = 190;
+      const m = { t: 10, r: 4, b: 22, l: 26 };
+      const iw = W - m.l - m.r, ih = H - m.t - m.b;
+      const max = Math.max(1, ...data.map(d => d.value));
+      const step = max <= 4 ? 1 : max <= 10 ? 2 : max <= 20 ? 5 : Math.ceil(max / 4 / 5) * 5;
+      const top = Math.ceil(max / step) * step;
+      const y = (v) => m.t + ih - (v / top) * ih;
+      const slot = iw / data.length;
+      const gap = data.length > 40 ? 1 : 2;
+      const bw = Math.max(1, slot - gap * 2 - (data.length <= 14 ? slot * 0.25 : 0));
+
+      const NS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.setAttribute('height', H);
+      svg.setAttribute('role', 'img');
+      const el = (tag, attrs, text) => {
+        const e = document.createElementNS(NS, tag);
+        for (const k in attrs) e.setAttribute(k, attrs[k]);
+        if (text != null) e.textContent = text;
+        svg.append(e);
+        return e;
+      };
+      for (let v = 0; v <= top; v += step) {
+        if (v > 0) el('line', { class: 'grid', x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) });
+        el('text', { x: m.l - 6, y: y(v) + 4, 'text-anchor': 'end' }, v);
+      }
+      el('line', { class: 'base', x1: m.l, x2: W - m.r, y1: y(0), y2: y(0) });
+
+      const tip = tipFor(container);
+      data.forEach((d, i) => {
+        const cx = m.l + slot * i + slot / 2;
+        const hit = el('rect', { class: 'hit', x: m.l + slot * i, y: m.t, width: slot, height: ih });
+        if (d.value > 0) {
+          const h = y(0) - y(d.value), x = cx - bw / 2, r = Math.min(4, bw / 2, h);
+          el('path', {
+            class: 'bar',
+            d: `M${x},${y(0)} V${y(d.value) + r} Q${x},${y(d.value)} ${x + r},${y(d.value)} H${x + bw - r} Q${x + bw},${y(d.value)} ${x + bw},${y(d.value) + r} V${y(0)} Z`,
+          });
+        }
+        if (i % labelEvery === 0) el('text', { x: cx, y: H - 6, 'text-anchor': 'middle' }, label(d, i));
+        const show = () => {
+          tip.innerHTML = d.tip;
+          tip.style.left = Math.min(Math.max(cx, 60), W - 60) + 'px';
+          tip.style.top = (d.value > 0 ? y(d.value) : y(0)) - 6 + 'px';
+          tip.classList.add('on');
+        };
+        hit.addEventListener('mouseenter', show);
+        hit.addEventListener('mouseleave', () => tip.classList.remove('on'));
+        hit.addEventListener('touchstart', show, { passive: true });
+      });
+      svg.setAttribute('aria-label', data.map(d => d.label + ': ' + d.value).join(', '));
+      container.prepend(svg);
+    }
+
+    function render() {
+      document.querySelectorAll('.ranges button').forEach(b => b.setAttribute('aria-pressed', b.dataset.range === range));
+      const from = rangeStart();
+      const today = startOfDay(Date.now());
+      const days = Math.round((today - from) / DAY) + 1;
+      const inRange = log.filter(e => e.at >= from);
+
+      // ---- Tiles
+      const total = inRange.length;
+      const mins = inRange.reduce((n, e) => n + (e.min || 0), 0);
+      const perDay = {};
+      inRange.forEach(e => { const k = dayKey(e.at); perDay[k] = (perDay[k] || 0) + 1; });
+      let best = null;
+      for (let t = from; t <= today; t = addDays(t, 1)) {
+        const n = perDay[dayKey(t)] || 0;
+        if (n && (!best || n > best.n)) best = { n, t };
+      }
+      const todayCount = log.filter(e => e.at >= today).length;
+      $('t-count').textContent = total;
+      $('t-count-h').textContent = todayCount + ' today';
+      $('t-time').textContent = fmtMin(mins);
+      $('t-avg').textContent = (total / days).toFixed(1);
+      $('t-avg-h').textContent = 'over ' + plural(days, 'day');
+      $('t-best').textContent = best ? best.n : '–';
+      $('t-best-h').textContent = best ? fmtDay(best.t, { weekday: 'short', month: 'short', day: 'numeric' }) : 'no sessions yet';
+
+      // Streak counts back from today (or from yesterday if nothing yet today), over the whole log.
+      const allDays = new Set(log.map(e => dayKey(e.at)));
+      let streak = 0, t = allDays.has(dayKey(today)) ? today : addDays(today, -1);
+      while (allDays.has(dayKey(t))) { streak++; t = addDays(t, -1); }
+      $('t-streak').textContent = streak;
+      $('t-streak-h').textContent = (streak === 1 ? 'day' : 'days') + ' in a row';
+
+      // ---- Per day (weekly buckets when the range is long)
+      const weekly = days > 120;
+      const buckets = [];
+      if (weekly) {
+        let s = from; const wd = (new Date(s).getDay() + 6) % 7; s = addDays(s, -wd);   // Monday
+        for (; s <= today; s = addDays(s, 7)) buckets.push({ start: s, end: addDays(s, 7) });
+      } else {
+        for (let s = from; s <= today; s = addDays(s, 1)) buckets.push({ start: s, end: addDays(s, 1) });
+      }
+      const daily = buckets.map(b => {
+        const es = inRange.filter(e => e.at >= b.start && e.at < b.end);
+        const m = es.reduce((n, e) => n + (e.min || 0), 0);
+        const when = weekly ? 'Week of ' + fmtDay(b.start) : fmtDay(b.start, { weekday: 'short', month: 'short', day: 'numeric' });
+        return { label: fmtDay(b.start), value: es.length, tip: `<b>${when}</b><br>${plural(es.length, 'pomodoro')} · ${fmtMin(m)}`, start: b.start };
+      });
+      $('daily-sub').textContent = weekly ? 'Grouped by week' : (days <= 7 ? 'Last 7 days' : 'Last ' + days + ' days');
+      const dailyEl = $('daily');
+      if (!log.length) {
+        dailyEl.innerHTML = '<p class="empty">No pomodoros logged yet. Finish a focus session on the timer and it will show up here.</p>';
+      } else {
+        const every = Math.ceil(daily.length / 7);
+        barChart(dailyEl, daily, {
+          labelEvery: every,
+          label: (d) => days <= 7 ? fmtDay(d.start, { weekday: 'short' }) : d.label,
+        });
+      }
+
+      // ---- By project
+      const counts = new Map();
+      inRange.forEach(e => {
+        const ids = (e.cats || []).filter(id => catById[id]);
+        if (!ids.length) counts.set('__none', (counts.get('__none') || 0) + 1);
+        ids.forEach(id => counts.set(id, (counts.get(id) || 0) + 1));
+      });
+      const rows = [...counts].map(([id, n]) => id === '__none'
+        ? { name: 'No project', color: 'var(--none)', n }
+        : { name: catById[id].name, color: catById[id].color, n }).sort((a, b) => b.n - a.n);
+      const proj = $('projects');
+      proj.innerHTML = '';
+      if (!rows.length) proj.innerHTML = '<p class="empty">Nothing in this range.</p>';
+      const pmax = Math.max(1, ...rows.map(r => r.n));
+      rows.forEach(r => {
+        const row = document.createElement('div'); row.className = 'proj-row';
+        const name = document.createElement('div'); name.className = 'proj-name';
+        const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = r.color;
+        const label = document.createElement('span'); label.textContent = r.name; label.title = r.name;
+        name.append(dot, label);
+        const bar = document.createElement('div'); bar.className = 'proj-bar';
+        const fill = document.createElement('div'); fill.className = 'proj-fill';
+        fill.style.background = r.color; fill.style.width = (r.n / pmax * 78) + '%';
+        const val = document.createElement('span'); val.className = 'proj-val';
+        val.textContent = r.n + (total ? ' · ' + Math.round(r.n / total * 100) + '%' : '');
+        bar.append(fill, val);
+        row.title = r.name + ': ' + plural(r.n, 'pomodoro');
+        row.append(name, bar);
+        proj.append(row);
+      });
+
+      // ---- Hour of day
+      const hours = Array.from({ length: 24 }, (_, h) => ({ h, value: 0 }));
+      inRange.forEach(e => { hours[new Date(e.at).getHours()].value++; });
+      const hLabel = (h) => (h % 12 || 12) + (h < 12 ? 'a' : 'p');
+      hours.forEach(d => { d.label = hLabel(d.h); d.tip = `<b>${hLabel(d.h)}–${hLabel((d.h + 1) % 24)}</b><br>${plural(d.value, 'pomodoro')}`; });
+      if (!inRange.length) $('hours').innerHTML = '<p class="empty">Nothing in this range.</p>';
+      else barChart($('hours'), hours, { labelEvery: 6 });
+
+      // ---- Sessions table (newest first)
+      const recent = inRange.slice().reverse();
+      const shown = recent.slice(0, tableLimit);
+      $('table-sub').textContent = recent.length > shown.length ? 'Latest ' + shown.length + ' of ' + recent.length : plural(recent.length, 'session');
+      const box = $('sessions');
+      if (!recent.length) { box.innerHTML = '<p class="empty">Nothing in this range.</p>'; return; }
+      const table = document.createElement('table');
+      table.innerHTML = '<thead><tr><th>When</th><th>Task</th><th>Projects</th><th class="num">Min</th></tr></thead>';
+      const tb = document.createElement('tbody');
+      shown.forEach(e => {
+        const tr = document.createElement('tr');
+        const when = document.createElement('td');
+        when.textContent = fmtDay(e.at, { weekday: 'short', month: 'short', day: 'numeric' }) + ', ' +
+          new Date(e.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const task = document.createElement('td'); task.textContent = e.task || '—';
+        const pr = document.createElement('td');
+        const tags = document.createElement('div'); tags.className = 'tags';
+        (e.cats || []).filter(id => catById[id]).forEach(id => {
+          const t = document.createElement('span'); t.className = 'tag';
+          const d = document.createElement('span'); d.className = 'dot'; d.style.background = catById[id].color;
+          t.append(d, catById[id].name); tags.append(t);
+        });
+        if (!tags.children.length) tags.textContent = '—';
+        pr.append(tags);
+        const mn = document.createElement('td'); mn.className = 'num'; mn.textContent = e.min || '';
+        tr.append(when, task, pr, mn);
+        tb.append(tr);
+      });
+      table.append(tb);
+      box.innerHTML = '';
+      box.append(table);
+      if (recent.length > shown.length) {
+        const more = document.createElement('button');
+        more.className = 'more'; more.type = 'button';
+        more.textContent = 'Show ' + Math.min(30, recent.length - shown.length) + ' more';
+        more.onclick = () => { tableLimit += 30; render(); };
+        box.append(more);
+      }
+    }
+
+    document.querySelectorAll('.ranges button').forEach(b => b.onclick = () => {
+      range = b.dataset.range; save('pomo-stats-range', range); tableLimit = 15; render();
+    });
+    let rt;
+    window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });
+    render();
+  </script>
+</body>
+</html>

@@ -104,6 +104,7 @@
     .env-badge.dev { background: #7a3bd9; }
     .env-badge.sandbox { background: #d98a1b; }
     .count { margin-top: 18px; color: var(--muted); font-size: .9rem; }
+    .count a { color: var(--fg); }
     .tasks { margin-top: 24px; text-align: left; }
     .tasks h2 { font-size: 1rem; margin: 0 0 10px; display: flex; justify-content: space-between; align-items: baseline; }
     .tasks h2 small { color: var(--muted); font-weight: 400; font-size: .8rem; }
@@ -207,7 +208,7 @@
       <button id="reset" class="secondary">Reset</button>
       <button id="skip" class="secondary" title="Skip to next">Skip</button>
     </div>
-    <p class="count">Completed pomodoros: <span id="done">0</span></p>
+    <p class="count">Completed pomodoros: <span id="done">0</span> · <a href="stats.html">📊 Stats</a></p>
     <section class="tasks" aria-label="Task plan">
       <h2>Plan <small id="plan-summary"></small></h2>
       <div class="projects" id="projects" role="group" aria-label="Filter by project"></div>
@@ -350,11 +351,24 @@
       }
     }
 
+    // Every completed focus session is appended to `pomo-log` for the stats page.
+    function logSession(task) {
+      const log = load('pomo-log', []);
+      log.push({
+        at: Date.now(),
+        min: settings.work,
+        task: task ? task.title : null,
+        cats: task ? catsOf(task).map(c => c.id) : [],
+      });
+      save('pomo-log', log);
+    }
+
     function finish() {
       const finished = mode;
       if (finished === 'work') {
         done++; save('pomo-done', done);
         const active = activeTask();
+        logSession(active);
         if (active) {
           active.spent++;
           catsOf(active).forEach(c => { c.logged = (c.logged || 0) + 1; });
