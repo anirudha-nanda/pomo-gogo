@@ -4,6 +4,10 @@ A dependency-free Pomodoro timer in a single `index.html`.
 
 **Live:** https://anirudha-nanda.github.io/pomo-gogo/
 
+**Plan by task:** add tasks with an estimate of how many pomodoros each needs. Click a task to make it
+the current one. Each finished focus session counts toward it (e.g. `2/3 🍅`), and the plan shows the
+pomodoros left and an estimated finish time, including breaks.
+
 Features: focus / short / long break modes, configurable durations, auto-start,
 completed-session counter, sound + desktop notification on finish, Space to start/pause,
 light/dark theme. Settings persist in `localStorage`.

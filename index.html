@@ -74,6 +74,7 @@
     }
     .time strong { font-size: 3.4rem; font-variant-numeric: tabular-nums; }
     .time span { color: var(--muted); font-size: .9rem; }
+    #current-task { max-width: 170px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
     .controls { display: flex; gap: 10px; justify-content: center; }
     .controls button {
       border: 0; border-radius: 12px; padding: 12px 22px;
@@ -89,6 +90,38 @@
       border: 1px solid var(--track); background: var(--bg); color: var(--fg); font: inherit;
     }
     .count { margin-top: 18px; color: var(--muted); font-size: .9rem; }
+    .tasks { margin-top: 24px; text-align: left; }
+    .tasks h2 { font-size: 1rem; margin: 0 0 10px; display: flex; justify-content: space-between; align-items: baseline; }
+    .tasks h2 small { color: var(--muted); font-weight: 400; font-size: .8rem; }
+    .add { display: flex; gap: 6px; margin-bottom: 10px; }
+    .add input {
+      min-width: 0; padding: 8px; border-radius: 8px;
+      border: 1px solid var(--track); background: var(--bg); color: var(--fg); font: inherit;
+    }
+    .add input[type=text] { flex: 1; }
+    .add input[type=number] { width: 56px; }
+    .add button, .task-actions button {
+      border: 0; border-radius: 8px; background: var(--track); color: var(--fg);
+      font: inherit; cursor: pointer;
+    }
+    .add button { padding: 8px 12px; background: var(--accent); color: #fff; font-weight: 600; }
+    #task-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+    .task {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px; border-radius: 10px; border: 2px solid transparent; background: var(--bg);
+      cursor: pointer;
+    }
+    .task.active { border-color: var(--accent); }
+    .task.done .task-title { text-decoration: line-through; color: var(--muted); }
+    .task input[type=checkbox] { flex: none; width: 18px; height: 18px; accent-color: var(--accent); }
+    .task-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .task-count { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .task-count.over { color: var(--accent); }
+    .task-actions { display: flex; gap: 4px; }
+    .task-actions button { width: 26px; height: 26px; padding: 0; font-size: .9rem; }
+    .empty { color: var(--muted); font-size: .9rem; text-align: center; padding: 8px; }
+    .task-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; color: var(--muted); font-size: .85rem; flex-wrap: wrap; }
+    .task-foot button { border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
   </style>
 </head>
 <body>
@@ -107,6 +140,7 @@
       <div class="time">
         <strong id="clock" aria-live="polite">25:00</strong>
         <span id="label">Focus</span>
+        <span id="current-task"></span>
       </div>
     </div>
     <div class="controls">
@@ -115,6 +149,19 @@
       <button id="skip" class="secondary" title="Skip to next">Skip</button>
     </div>
     <p class="count">Completed pomodoros: <span id="done">0</span></p>
+    <section class="tasks" aria-label="Task plan">
+      <h2>Plan <small id="plan-summary"></small></h2>
+      <form class="add" id="add-form">
+        <input id="task-title" type="text" placeholder="What are you working on?" aria-label="Task" required>
+        <input id="task-est" type="number" min="1" max="20" value="1" aria-label="Estimated pomodoros" title="Estimated pomodoros">
+        <button type="submit">Add</button>
+      </form>
+      <ul id="task-list"></ul>
+      <div class="task-foot">
+        <span id="finish-at"></span>
+        <button id="clear-done" type="button">Clear finished</button>
+      </div>
+    </section>
     <details>
       <summary>Settings</summary>
       <div class="settings">
@@ -144,6 +191,8 @@
     let endAt = null;
     let tick = null;
     let done = load('pomo-done', 0);
+    let tasks = load('pomo-tasks', []);
+    let activeId = load('pomo-active', null);
 
     const $ = (id) => document.getElementById(id);
     const progress = document.querySelector('.progress');
@@ -160,6 +209,9 @@
       $('clock').textContent = fmt(remaining);
       $('label').textContent = LABELS[mode];
       $('done').textContent = done;
+      const active = activeTask();
+      $('current-task').textContent = active && mode === 'work' ? active.title : '';
+      if ($('finish-at')) renderPlanStats();
       $('start').textContent = tick ? 'Pause' : 'Start';
       progress.style.strokeDashoffset = CIRC * (1 - remaining / total());
       document.body.className = mode === 'work' ? '' : mode;
@@ -205,7 +257,11 @@
 
     function finish() {
       const finished = mode;
-      if (finished === 'work') { done++; save('pomo-done', done); }
+      if (finished === 'work') {
+        done++; save('pomo-done', done);
+        const active = activeTask();
+        if (active) { active.spent++; saveTasks(); }
+      }
       beep();
       notify(finished === 'work' ? 'Focus session done — take a break!' : 'Break over — back to focus!');
       next();
@@ -259,7 +315,97 @@
       }
     });
 
+    // ---- Task plan ----
+    function activeTask() { return tasks.find(t => t.id === activeId && !t.done) || null; }
+    function saveTasks() { save('pomo-tasks', tasks); save('pomo-active', activeId); renderTasks(); }
+    function pickNextActive() {
+      if (!activeTask()) activeId = (tasks.find(t => !t.done) || {}).id ?? null;
+    }
+
+    function renderTasks() {
+      const list = $('task-list');
+      list.innerHTML = '';
+      if (!tasks.length) {
+        list.innerHTML = '<li class="empty">Add tasks and estimate how many pomodoros each needs.</li>';
+      }
+      tasks.forEach((t, i) => {
+        const li = document.createElement('li');
+        li.className = 'task' + (t.id === activeId && !t.done ? ' active' : '') + (t.done ? ' done' : '');
+        li.title = t.done ? '' : 'Click to make this the current task';
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.checked = t.done; cb.setAttribute('aria-label', 'Mark finished');
+        cb.onclick = (e) => e.stopPropagation();
+        cb.onchange = () => { t.done = cb.checked; pickNextActive(); saveTasks(); render(); };
+
+        const title = document.createElement('span');
+        title.className = 'task-title'; title.textContent = t.title;
+
+        const count = document.createElement('span');
+        count.className = 'task-count' + (t.spent > t.est ? ' over' : '');
+        count.textContent = t.spent + '/' + t.est + ' 🍅';
+
+        const actions = document.createElement('span');
+        actions.className = 'task-actions';
+        const btn = (label, aria, fn) => {
+          const b = document.createElement('button');
+          b.type = 'button'; b.textContent = label; b.setAttribute('aria-label', aria); b.title = aria;
+          b.onclick = (e) => { e.stopPropagation(); fn(); saveTasks(); render(); };
+          return b;
+        };
+        actions.append(
+          btn('−', 'Decrease estimate', () => { t.est = Math.max(1, t.est - 1); }),
+          btn('+', 'Increase estimate', () => { t.est = Math.min(20, t.est + 1); }),
+          btn('↑', 'Move up', () => { if (i > 0) [tasks[i - 1], tasks[i]] = [tasks[i], tasks[i - 1]]; }),
+          btn('✕', 'Delete task', () => { tasks.splice(i, 1); pickNextActive(); })
+        );
+
+        li.onclick = () => { if (!t.done) { activeId = t.id; saveTasks(); render(); } };
+        li.append(cb, title, count, actions);
+        list.append(li);
+      });
+
+      $('clear-done').hidden = !tasks.some(t => t.done);
+      renderPlanStats();
+    }
+
+    function renderPlanStats() {
+      const left = tasks.filter(t => !t.done).reduce((n, t) => n + Math.max(0, t.est - t.spent), 0);
+      const planned = tasks.reduce((n, t) => n + t.est, 0);
+      const spent = tasks.reduce((n, t) => n + t.spent, 0);
+      $('plan-summary').textContent = tasks.length ? spent + '/' + planned + ' 🍅 · ' + left + ' left' : '';
+      $('finish-at').textContent = left ? 'Est. finish ' + estimateFinish(left) : (tasks.length ? 'All planned work done 🎉' : '');
+    }
+
+    // Time to get through `left` focus sessions (plus the breaks between them), starting from the current timer.
+    function estimateFinish(left) {
+      let secs = remaining, n = done;
+      let sessions = left;
+      if (mode === 'work') { n++; sessions--; }       // the running focus session counts as one
+      for (let k = 0; k < sessions; k++) {
+        if (mode === 'work' || k > 0) secs += (n % settings.every === 0 ? settings.long : settings.short) * 60;
+        secs += settings.work * 60;
+        n++;
+      }
+      const at = new Date(Date.now() + secs * 1000);
+      return at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' (' + Math.round(secs / 60) + ' min)';
+    }
+
+    $('add-form').onsubmit = (e) => {
+      e.preventDefault();
+      const title = $('task-title').value.trim();
+      const est = Math.min(20, Math.max(1, parseInt($('task-est').value, 10) || 1));
+      if (!title) return;
+      tasks.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title, est, spent: 0, done: false });
+      pickNextActive();
+      $('task-title').value = ''; $('task-est').value = 1;
+      saveTasks(); render();
+    };
+    $('clear-done').onclick = () => { tasks = tasks.filter(t => !t.done); saveTasks(); };
+
     remaining = total();
+    pickNextActive();
+    renderTasks();
     render();
   </script>
 </body>
