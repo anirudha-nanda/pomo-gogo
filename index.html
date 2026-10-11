@@ -126,6 +126,19 @@
     .task-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
     .tags { display: flex; flex-wrap: wrap; gap: 4px; }
     .tag { font-size: .7rem; padding: 1px 7px; border-radius: 999px; color: #fff; background: var(--muted); }
+    .log-form {
+      flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      padding-top: 6px; border-top: 1px dashed var(--track); font-size: .8rem; color: var(--muted);
+    }
+    .log-form input {
+      padding: 5px 6px; border-radius: 6px; border: 1px solid var(--track);
+      background: var(--card); color: var(--fg); font: inherit; min-width: 0;
+    }
+    .log-form input[type=number] { width: 52px; }
+    .log-form input[type=datetime-local] { flex: 1 1 170px; }
+    .log-form button { border: 0; border-radius: 6px; padding: 6px 12px; font: inherit; font-weight: 600; cursor: pointer; }
+    .log-form .go { background: var(--accent); color: #fff; }
+    .log-form .cancel { background: var(--track); color: var(--fg); font-weight: 400; }
     .task .pick { flex-basis: 100%; padding-top: 4px; border-top: 1px dashed var(--track); }
     .add select {
       min-width: 0; padding: 8px 4px; border-radius: 8px;
@@ -352,15 +365,29 @@
     }
 
     // Every completed focus session is appended to `pomo-log` for the stats page.
-    function logSession(task) {
+    function logSession(task, at = Date.now(), manual = false) {
       const log = load('pomo-log', []);
-      log.push({
-        at: Date.now(),
+      const entry = {
+        at,
         min: settings.work,
         task: task ? task.title : null,
+        taskId: task ? task.id : null,
         cats: task ? catsOf(task).map(c => c.id) : [],
-      });
+      };
+      if (manual) entry.manual = true;
+      log.push(entry);
       save('pomo-log', log);
+    }
+
+    // Record pomodoros done without the timer: `count` sessions, the last one finishing at `endAt`.
+    function logManual(task, count, endAt) {
+      for (let k = count - 1; k >= 0; k--) {
+        logSession(task, endAt - k * (settings.work + settings.short) * 60000, true);
+      }
+      task.spent += count;
+      catsOf(task).forEach(c => { c.logged = (c.logged || 0) + count; });
+      done += count; save('pomo-done', done);
+      saveTasks(); render();
     }
 
     function finish() {
@@ -626,6 +653,7 @@
       actions.append(
         btn('−', 'Decrease estimate', () => { t.est = Math.max(1, t.est - 1); }),
         btn('+', 'Increase estimate', () => { t.est = Math.min(20, t.est + 1); }),
+        btn('🍅', 'Log pomodoros you did without the timer', () => { loggingId = loggingId === t.id ? null : t.id; }),
         btn('🏷', 'Edit projects', () => { editingId = editingId === t.id ? null : t.id; }),
         btn('↑', 'Move up', moveUp),
         btn('✕', 'Delete task', () => { tasks.splice(i, 1); pickNextActive(t.cats); })
@@ -641,12 +669,48 @@
         pick.append(projectPicker(t.cats, (ids) => { t.cats = ids; saveTasks(); render(); }));
         li.append(pick);
       }
+      if (loggingId === t.id && groupId === logKey) li.append(logForm(t));
       return li;
+    }
+
+    const pad = (n) => String(n).padStart(2, '0');
+    const localInput = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+
+    function logForm(t) {
+      const f = document.createElement('form');
+      f.className = 'log-form';
+      f.onclick = (e) => e.stopPropagation();
+      const n = document.createElement('input');
+      n.type = 'number'; n.min = 1; n.max = 12; n.value = 1; n.setAttribute('aria-label', 'Number of pomodoros');
+      const when = document.createElement('input');
+      when.type = 'datetime-local'; when.value = localInput(new Date()); when.max = localInput(new Date());
+      when.setAttribute('aria-label', 'Finished at');
+      const go = document.createElement('button'); go.type = 'submit'; go.className = 'go'; go.textContent = 'Log';
+      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'cancel'; cancel.textContent = 'Cancel';
+      cancel.onclick = () => { loggingId = null; renderTasks(); };
+      f.append('Log', n, '🍅 finished at', when, go, cancel);
+      f.onsubmit = (e) => {
+        e.preventDefault();
+        const count = Math.min(12, Math.max(1, parseInt(n.value, 10) || 1));
+        const at = Math.min(Date.now(), new Date(when.value).getTime() || Date.now());
+        loggingId = null;
+        logManual(t, count, at);
+      };
+      setTimeout(() => n.focus(), 0);
+      return f;
     }
 
     const sumLeft = (list) => list.filter(t => !t.done).reduce((n, t) => n + Math.max(0, t.est - t.spent), 0);
 
     let editKey;   // group id in which the inline project editor is shown
+    let logKey;    // group id in which the inline "log pomodoros" form is shown
+    let loggingId = null;
+    // A shared task is listed in several groups; inline forms show only in the first group it appears in.
+    function firstGroupKey(shown, id) {
+      const t = tasks.find(x => x.id === id);
+      const g = t && shown.find(g => g.items.includes(t));
+      return g ? (g.cat ? g.cat.id : null) : undefined;
+    }
     function renderTasks() {
       renderProjects();
       const list = $('task-list');
@@ -660,9 +724,8 @@
       if (!shown.length || !shown.some(g => g.items.length || g.cat)) {
         list.innerHTML = '<p class="empty">Add tasks and estimate how many pomodoros each needs.</p>';
       }
-      const editing = tasks.find(t => t.id === editingId);
-      const editGroup = editing && shown.find(g => g.items.includes(editing));
-      editKey = editGroup ? (editGroup.cat ? editGroup.cat.id : null) : undefined;
+      editKey = firstGroupKey(shown, editingId);
+      logKey = firstGroupKey(shown, loggingId);
       shown.forEach(g => {
         const sec = document.createElement('div');
         sec.className = 'group';

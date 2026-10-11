@@ -87,6 +87,10 @@
     td .tag { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: .75rem; }
     .empty { color: var(--muted); text-align: center; padding: 24px 8px; font-size: .9rem; }
     .scroll { overflow-x: auto; }
+    .manual { font-size: .7rem; color: var(--muted); border: 1px solid var(--track); border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+    .rm { border: 0; background: none; color: var(--muted); cursor: pointer; font: inherit; padding: 0 4px; }
+    .rm:hover { color: var(--fg); }
+    .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     .more { margin-top: 10px; border: 1px solid var(--track); background: none; color: var(--fg); border-radius: 999px; padding: 6px 14px; font: inherit; font-size: .85rem; cursor: pointer; }
   </style>
 </head>
@@ -144,7 +148,7 @@
     const $ = (id) => document.getElementById(id);
     const DAY = 86400000;
 
-    const log = load('pomo-log', []).filter(e => e && typeof e.at === 'number').sort((a, b) => a.at - b.at);
+    let log = load('pomo-log', []).filter(e => e && typeof e.at === 'number').sort((a, b) => a.at - b.at);
     const cats = load('pomo-cats', []);
     const catById = Object.fromEntries(cats.map(c => [c.id, c]));
     let range = load('pomo-stats-range', '7');
@@ -334,7 +338,7 @@
       const box = $('sessions');
       if (!recent.length) { box.innerHTML = '<p class="empty">Nothing in this range.</p>'; return; }
       const table = document.createElement('table');
-      table.innerHTML = '<thead><tr><th>When</th><th>Task</th><th>Projects</th><th class="num">Min</th></tr></thead>';
+      table.innerHTML = '<thead><tr><th>When</th><th>Task</th><th>Projects</th><th class="num">Min</th><th><span class="sr">Remove</span></th></tr></thead>';
       const tb = document.createElement('tbody');
       shown.forEach(e => {
         const tr = document.createElement('tr');
@@ -342,6 +346,7 @@
         when.textContent = fmtDay(e.at, { weekday: 'short', month: 'short', day: 'numeric' }) + ', ' +
           new Date(e.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         const task = document.createElement('td'); task.textContent = e.task || '—';
+        if (e.manual) { const m = document.createElement('span'); m.className = 'manual'; m.textContent = 'manual'; m.title = 'Logged by hand, not timed'; task.append(' ', m); }
         const pr = document.createElement('td');
         const tags = document.createElement('div'); tags.className = 'tags';
         (e.cats || []).filter(id => catById[id]).forEach(id => {
@@ -352,7 +357,12 @@
         if (!tags.children.length) tags.textContent = '—';
         pr.append(tags);
         const mn = document.createElement('td'); mn.className = 'num'; mn.textContent = e.min || '';
-        tr.append(when, task, pr, mn);
+        const rm = document.createElement('td');
+        const x = document.createElement('button'); x.type = 'button'; x.className = 'rm'; x.textContent = '✕';
+        x.title = 'Remove this session'; x.setAttribute('aria-label', 'Remove session ' + when.textContent);
+        x.onclick = () => removeSession(e);
+        rm.append(x);
+        tr.append(when, task, pr, mn, rm);
         tb.append(tr);
       });
       table.append(tb);
@@ -365,6 +375,21 @@
         more.onclick = () => { tableLimit += 30; render(); };
         box.append(more);
       }
+    }
+
+    // Removing a session also takes it back off its task, its projects and the timer's completed count.
+    function removeSession(e) {
+      const label = (e.task ? '"' + e.task + '" ' : '') + new Date(e.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      if (!confirm('Remove the pomodoro ' + label + '?')) return;
+      log = log.filter(x => x !== e);
+      save('pomo-log', log);
+      const tasks = load('pomo-tasks', []);
+      const t = e.taskId && tasks.find(x => x.id === e.taskId);
+      if (t) { t.spent = Math.max(0, (t.spent || 0) - 1); save('pomo-tasks', tasks); }
+      (e.cats || []).forEach(id => { if (catById[id]) catById[id].logged = Math.max(0, (catById[id].logged || 0) - 1); });
+      save('pomo-cats', cats);
+      save('pomo-done', Math.max(0, load('pomo-done', 0) - 1));
+      render();
     }
 
     document.querySelectorAll('.ranges button').forEach(b => b.onclick = () => {
