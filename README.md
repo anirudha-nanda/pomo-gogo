@@ -15,3 +15,5 @@ One-time setup: **Settings → Pages → Build and deployment → Source: Deploy
 then pick the branch and `/ (root)`.
 
 Run locally: just open `index.html` in a browser.
+
+Keyboard: <kbd>Space</kbd> starts/pauses the timer.
