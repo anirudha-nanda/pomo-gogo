@@ -50,6 +50,11 @@
       text-align: center;
     }
     h1 { margin: 0 0 20px; font-size: 1.4rem; }
+    main { position: relative; }
+    .stats-link {
+      position: absolute; top: 20px; right: 18px; text-decoration: none; font-size: 1.1rem;
+      width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; background: var(--track);
+    }
     .modes { display: flex; gap: 6px; justify-content: center; margin-bottom: 24px; }
     .modes button {
       flex: 1;
@@ -199,6 +204,7 @@
 </head>
 <body>
   <main>
+    <a class="stats-link" href="stats.html" title="Stats" aria-label="Stats">📊</a>
     <h1>🍅 Pomo Gogo</h1>
     <div class="modes" role="group" aria-label="Mode">
       <button data-mode="work" aria-pressed="true">Focus</button>
