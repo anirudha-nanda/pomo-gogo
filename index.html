@@ -89,6 +89,13 @@
       width: 72px; padding: 6px; border-radius: 8px;
       border: 1px solid var(--track); background: var(--bg); color: var(--fg); font: inherit;
     }
+    .env-badge {
+      position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+      padding: 4px 14px; border-radius: 0 0 10px 10px;
+      font-size: .75rem; font-weight: 700; letter-spacing: .08em; color: #fff;
+    }
+    .env-badge.dev { background: #7a3bd9; }
+    .env-badge.sandbox { background: #d98a1b; }
     .count { margin-top: 18px; color: var(--muted); font-size: .9rem; }
     .tasks { margin-top: 24px; text-align: left; }
     .tasks h2 { font-size: 1rem; margin: 0 0 10px; display: flex; justify-content: space-between; align-items: baseline; }
@@ -175,6 +182,19 @@
   </main>
 
   <script>
+    // Environment badge: DEV when served locally, SANDBOX on the sandbox Pages site, nothing on prod.
+    const ENV = (() => {
+      const h = location.hostname;
+      const env = location.protocol === 'file:' || h === 'localhost' || h === '127.0.0.1' || h.endsWith('.local') ? 'dev'
+        : location.pathname.startsWith('/pomo-gogo-sandbox') ? 'sandbox' : null;
+      if (!env) return '';
+      const b = document.createElement('div');
+      b.className = 'env-badge ' + env;
+      b.textContent = env.toUpperCase();
+      document.body.prepend(b);
+      return '[' + env.toUpperCase() + '] ';
+    })();
+
     const LABELS = { work: 'Focus', short: 'Short break', long: 'Long break' };
     const DEFAULTS = { work: 25, short: 5, long: 15, every: 4, auto: false };
 
@@ -215,7 +235,7 @@
       $('start').textContent = tick ? 'Pause' : 'Start';
       progress.style.strokeDashoffset = CIRC * (1 - remaining / total());
       document.body.className = mode === 'work' ? '' : mode;
-      document.title = (tick ? fmt(remaining) + ' · ' : '') + LABELS[mode] + ' — Pomo Gogo';
+      document.title = ENV + (tick ? fmt(remaining) + ' · ' : '') + LABELS[mode] + ' — Pomo Gogo';
       document.querySelectorAll('.modes button').forEach(b =>
         b.setAttribute('aria-pressed', b.dataset.mode === mode));
     }
