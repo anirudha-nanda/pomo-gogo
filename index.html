@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pomo Gogo</title>
+  <meta name="description" content="A simple Pomodoro timer.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍅</text></svg>">
+  <style>
+    :root {
+      --bg: #fdf6f3;
+      --fg: #2b1d1a;
+      --muted: #7a6560;
+      --card: #ffffff;
+      --accent: #d9483b;
+      --track: #f0e2dd;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1a1413;
+        --fg: #f5ebe8;
+        --muted: #b09a95;
+        --card: #241c1a;
+        --track: #3a2e2b;
+      }
+    }
+    body.short { --accent: #3b9c6e; }
+    body.long  { --accent: #3b6fd9; }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      transition: background .3s;
+    }
+    main {
+      width: 100%;
+      max-width: 420px;
+      background: var(--card);
+      border-radius: 20px;
+      padding: 28px 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.08);
+      text-align: center;
+    }
+    h1 { margin: 0 0 20px; font-size: 1.4rem; }
+    .modes { display: flex; gap: 6px; justify-content: center; margin-bottom: 24px; }
+    .modes button {
+      flex: 1;
+      border: 0;
+      padding: 8px 6px;
+      border-radius: 999px;
+      background: var(--track);
+      color: var(--fg);
+      font: inherit;
+      font-size: .9rem;
+      cursor: pointer;
+    }
+    .modes button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+    .ring { position: relative; width: 240px; height: 240px; margin: 0 auto 24px; }
+    .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .ring circle { fill: none; stroke-width: 10; }
+    .ring .track { stroke: var(--track); }
+    .ring .progress { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .25s linear; }
+    .time {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .time strong { font-size: 3.4rem; font-variant-numeric: tabular-nums; }
+    .time span { color: var(--muted); font-size: .9rem; }
+    .controls { display: flex; gap: 10px; justify-content: center; }
+    .controls button {
+      border: 0; border-radius: 12px; padding: 12px 22px;
+      font: inherit; font-weight: 600; cursor: pointer;
+    }
+    #start { background: var(--accent); color: #fff; min-width: 120px; }
+    .secondary { background: var(--track); color: var(--fg); }
+    details { margin-top: 24px; text-align: left; }
+    summary { cursor: pointer; color: var(--muted); }
+    .settings { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 12px; align-items: center; }
+    .settings input[type=number] {
+      width: 72px; padding: 6px; border-radius: 8px;
+      border: 1px solid var(--track); background: var(--bg); color: var(--fg); font: inherit;
+    }
+    .count { margin-top: 18px; color: var(--muted); font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>🍅 Pomo Gogo</h1>
+    <div class="modes" role="group" aria-label="Mode">
+      <button data-mode="work" aria-pressed="true">Focus</button>
+      <button data-mode="short" aria-pressed="false">Short break</button>
+      <button data-mode="long" aria-pressed="false">Long break</button>
+    </div>
+    <div class="ring">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <circle class="track" cx="60" cy="60" r="54"></circle>
+        <circle class="progress" cx="60" cy="60" r="54"></circle>
+      </svg>
+      <div class="time">
+        <strong id="clock" aria-live="polite">25:00</strong>
+        <span id="label">Focus</span>
+      </div>
+    </div>
+    <div class="controls">
+      <button id="start">Start</button>
+      <button id="reset" class="secondary">Reset</button>
+      <button id="skip" class="secondary" title="Skip to next">Skip</button>
+    </div>
+    <p class="count">Completed pomodoros: <span id="done">0</span></p>
+    <details>
+      <summary>Settings</summary>
+      <div class="settings">
+        <label for="s-work">Focus (min)</label><input id="s-work" type="number" min="1" max="120">
+        <label for="s-short">Short break (min)</label><input id="s-short" type="number" min="1" max="60">
+        <label for="s-long">Long break (min)</label><input id="s-long" type="number" min="1" max="60">
+        <label for="s-every">Long break every</label><input id="s-every" type="number" min="2" max="10">
+        <label for="s-auto">Auto-start next</label><input id="s-auto" type="checkbox">
+      </div>
+    </details>
+  </main>
+
+  <script>
+    const LABELS = { work: 'Focus', short: 'Short break', long: 'Long break' };
+    const DEFAULTS = { work: 25, short: 5, long: 15, every: 4, auto: false };
+
+    function load(key, fallback) {
+      try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; }
+    }
+    function save(key, value) {
+      try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+    }
+
+    const settings = { ...DEFAULTS, ...load('pomo-settings', {}) };
+    let mode = 'work';
+    let remaining = settings.work * 60;
+    let endAt = null;
+    let tick = null;
+    let done = load('pomo-done', 0);
+
+    const $ = (id) => document.getElementById(id);
+    const progress = document.querySelector('.progress');
+    const CIRC = 2 * Math.PI * 54;
+    progress.style.strokeDasharray = CIRC;
+
+    function total() { return settings[mode] * 60; }
+    function fmt(s) {
+      const m = Math.floor(s / 60), r = s % 60;
+      return String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0');
+    }
+
+    function render() {
+      $('clock').textContent = fmt(remaining);
+      $('label').textContent = LABELS[mode];
+      $('done').textContent = done;
+      $('start').textContent = tick ? 'Pause' : 'Start';
+      progress.style.strokeDashoffset = CIRC * (1 - remaining / total());
+      document.body.className = mode === 'work' ? '' : mode;
+      document.title = (tick ? fmt(remaining) + ' · ' : '') + LABELS[mode] + ' — Pomo Gogo';
+      document.querySelectorAll('.modes button').forEach(b =>
+        b.setAttribute('aria-pressed', b.dataset.mode === mode));
+    }
+
+    function start() {
+      if (tick) return;
+      endAt = Date.now() + remaining * 1000;
+      tick = setInterval(step, 250);
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+      render();
+    }
+    function pause() {
+      clearInterval(tick);
+      tick = null;
+      render();
+    }
+    function step() {
+      remaining = Math.max(0, Math.round((endAt - Date.now()) / 1000));
+      if (remaining === 0) finish();
+      else render();
+    }
+
+    function setMode(m) {
+      pause();
+      mode = m;
+      remaining = total();
+      render();
+    }
+
+    function next() {
+      if (mode === 'work') {
+        setMode(done % settings.every === 0 && done > 0 ? 'long' : 'short');
+      } else {
+        setMode('work');
+      }
+    }
+
+    function finish() {
+      const finished = mode;
+      if (finished === 'work') { done++; save('pomo-done', done); }
+      beep();
+      notify(finished === 'work' ? 'Focus session done — take a break!' : 'Break over — back to focus!');
+      next();
+      if (settings.auto) start();
+    }
+
+    function beep() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        [0, 0.35, 0.7].forEach(t => {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.frequency.value = 880;
+          g.gain.setValueAtTime(0.2, ctx.currentTime + t);
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.3);
+          o.connect(g).connect(ctx.destination);
+          o.start(ctx.currentTime + t);
+          o.stop(ctx.currentTime + t + 0.3);
+        });
+      } catch {}
+    }
+    function notify(text) {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Pomo Gogo', { body: text });
+      }
+    }
+
+    $('start').onclick = () => (tick ? pause() : start());
+    $('reset').onclick = () => setMode(mode);
+    $('skip').onclick = () => next();
+    document.querySelectorAll('.modes button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+
+    const fields = { work: 's-work', short: 's-short', long: 's-long', every: 's-every' };
+    for (const [key, id] of Object.entries(fields)) {
+      const el = $(id);
+      el.value = settings[key];
+      el.onchange = () => {
+        const v = parseInt(el.value, 10);
+        if (!(v >= +el.min && v <= +el.max)) { el.value = settings[key]; return; }
+        settings[key] = v;
+        save('pomo-settings', settings);
+        if (!tick && key === mode) { remaining = total(); render(); }
+      };
+    }
+    $('s-auto').checked = settings.auto;
+    $('s-auto').onchange = (e) => { settings.auto = e.target.checked; save('pomo-settings', settings); };
+
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') {
+        e.preventDefault();
+        tick ? pause() : start();
+      }
+    });
+
+    remaining = total();
+    render();
+  </script>
+</body>
+</html>
