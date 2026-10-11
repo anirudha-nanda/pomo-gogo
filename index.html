@@ -107,7 +107,16 @@
       border: 1px solid var(--track); background: var(--bg); color: var(--fg); font: inherit;
     }
     .add input[type=text] { flex: 1 1 100%; }
-    .add select { flex: 1; max-width: none; }
+    .add .pick { flex: 1 1 100%; }
+    .add input[type=number] { margin-left: auto; }
+    .pick { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+    .pick .chip { padding: 3px 8px; font-size: .75rem; }
+    .pick .chip[aria-pressed="true"] { background: var(--chip, var(--track)); border-color: var(--chip, var(--fg)); color: #fff; }
+    .pick .chip[aria-pressed="true"] .dot { background: #fff !important; }
+    .task-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .tag { font-size: .7rem; padding: 1px 7px; border-radius: 999px; color: #fff; background: var(--muted); }
+    .task .pick { flex-basis: 100%; padding-top: 4px; border-top: 1px dashed var(--track); }
     .add select {
       min-width: 0; padding: 8px 4px; border-radius: 8px;
       border: 1px solid var(--track); background: var(--bg); color: var(--fg); font: inherit; font-size: .85rem;
@@ -134,7 +143,7 @@
       border: 0; background: none; color: var(--muted); cursor: pointer; font: inherit; padding: 0 2px;
     }
     .group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-    .task { border-left: 4px solid var(--cat, transparent); }
+    .task { padding-left: 14px; }
     .add input[type=number] { width: 56px; }
     .add button, .task-actions button {
       border: 0; border-radius: 8px; background: var(--track); color: var(--fg);
@@ -147,7 +156,7 @@
       padding: 10px; border-radius: 10px; border: 2px solid transparent; background: var(--bg);
       cursor: pointer;
     }
-    .task.active { border-color: var(--accent); border-left-color: var(--cat, var(--accent)); }
+    .task.active { border-color: var(--cat, var(--accent)); }
     .task.done .task-title { text-decoration: line-through; color: var(--muted); }
     .task input[type=checkbox] { flex: none; width: 18px; height: 18px; accent-color: var(--accent); }
     .task-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -157,7 +166,7 @@
     .task-actions button { width: 26px; height: 26px; padding: 0; font-size: .9rem; }
     @media (max-width: 480px) {
       .task { flex-wrap: wrap; row-gap: 6px; }
-      .task-title { flex-basis: calc(100% - 40px); }
+      .task-main { flex-basis: calc(100% - 40px); }
       .task input[type=checkbox] { margin: 0; }
       .task-count { margin-left: 26px; flex: 1; }
     }
@@ -196,7 +205,7 @@
       <div class="projects" id="projects" role="group" aria-label="Filter by project"></div>
       <form class="add" id="add-form">
         <input id="task-title" type="text" placeholder="What are you working on?" aria-label="Task" required>
-        <select id="task-cat" aria-label="Project"></select>
+        <div class="pick" id="task-cats" role="group" aria-label="Projects for the new task (pick any)"></div>
         <input id="task-est" type="number" min="1" max="20" value="1" aria-label="Estimated pomodoros" title="Estimated pomodoros">
         <button type="submit">Add</button>
       </form>
@@ -258,6 +267,10 @@
       { id: 'trustanchor', name: 'TrustAnchor', color: CAT_COLORS[2], logged: 0 },
     ];
     let filterCat = load('pomo-filter', 'all');   // 'all' | category id | 'none'
+    // A task can belong to several projects: t.cats is a list of project ids (older saves used a single t.cat).
+    tasks.forEach(t => { if (!Array.isArray(t.cats)) { t.cats = t.cat ? [t.cat] : []; delete t.cat; } });
+    let newCats = load('pomo-newcats', null);       // projects preselected in the add form
+    let editingId = null;                           // task whose projects are being edited inline
 
     const $ = (id) => document.getElementById(id);
     const progress = document.querySelector('.progress');
@@ -278,10 +291,10 @@
       const cur = $('current-task');
       cur.textContent = '';
       if (active && mode === 'work') {
-        const c = catOf(active);
-        if (c) { const d = document.createElement('span'); d.className = 'dot'; d.style.background = c.color; cur.append(d); }
+        const cs = catsOf(active);
+        cs.forEach(c => { const d = document.createElement('span'); d.className = 'dot'; d.style.background = c.color; cur.append(d); });
         cur.append(active.title);
-        cur.title = (c ? c.name + ' · ' : '') + active.title;
+        cur.title = (cs.length ? cs.map(c => c.name).join(', ') + ' · ' : '') + active.title;
       }
       if ($('finish-at')) renderPlanStats();
       $('start').textContent = tick ? 'Pause' : 'Start';
@@ -334,8 +347,7 @@
         const active = activeTask();
         if (active) {
           active.spent++;
-          const c = catOf(active);
-          if (c) c.logged = (c.logged || 0) + 1;
+          catsOf(active).forEach(c => { c.logged = (c.logged || 0) + 1; });
           saveTasks();
         }
       }
@@ -394,21 +406,23 @@
 
     // ---- Task plan ----
     const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    function catOf(t) { return cats.find(c => c.id === t.cat) || null; }
+    function catsOf(t) { return cats.filter(c => t.cats.includes(c.id)); }
+    const hasCat = (t, id) => t.cats.includes(id);
+    const noCat = (t) => !catsOf(t).length;
     function activeTask() { return tasks.find(t => t.id === activeId && !t.done) || null; }
     function saveTasks() {
       save('pomo-tasks', tasks); save('pomo-active', activeId);
-      save('pomo-cats', cats); save('pomo-filter', filterCat);
+      save('pomo-cats', cats); save('pomo-filter', filterCat); save('pomo-newcats', newCats);
       renderTasks();
     }
     function inFilter(t) {
-      return filterCat === 'all' || (filterCat === 'none' ? !catOf(t) : t.cat === filterCat);
+      return filterCat === 'all' || (filterCat === 'none' ? noCat(t) : hasCat(t, filterCat));
     }
     // Keep the current task if still open; otherwise prefer the next open task in the same project, then the filter, then anything.
-    function pickNextActive(preferCat) {
+    function pickNextActive(preferCats = []) {
       if (activeTask()) return;
       const open = tasks.filter(t => !t.done);
-      const next = open.find(t => preferCat !== undefined && t.cat === preferCat) || open.find(inFilter) || open[0];
+      const next = open.find(t => t.cats.some(id => preferCats.includes(id))) || open.find(inFilter) || open[0];
       activeId = next ? next.id : null;
     }
 
@@ -425,16 +439,17 @@
       if (name) { c.name = name; saveTasks(); render(); }
     }
     function deleteProject(c) {
-      const n = tasks.filter(t => t.cat === c.id).length;
-      if (!confirm('Delete project "' + c.name + '"?' + (n ? ' Its ' + n + ' task(s) move to "No project".' : ''))) return;
-      tasks.forEach(t => { if (t.cat === c.id) t.cat = null; });
+      const n = tasks.filter(t => hasCat(t, c.id)).length;
+      if (!confirm('Delete project "' + c.name + '"?' + (n ? ' It is removed from ' + n + ' task(s); tasks with no other project move to "No project".' : ''))) return;
+      tasks.forEach(t => { t.cats = t.cats.filter(id => id !== c.id); });
       cats = cats.filter(x => x !== c);
+      if (newCats) newCats = newCats.filter(id => id !== c.id);
       if (filterCat === c.id) filterCat = 'all';
       saveTasks(); render();
     }
 
     function renderProjects() {
-      if (filterCat === 'none' ? !tasks.some(t => !catOf(t)) : filterCat !== 'all' && !cats.some(c => c.id === filterCat)) filterCat = 'all';
+      if (filterCat === 'none' ? !tasks.some(noCat) : filterCat !== 'all' && !cats.some(c => c.id === filterCat)) filterCat = 'all';
       const bar = $('projects');
       bar.innerHTML = '';
       const chip = (id, label, color) => {
@@ -443,41 +458,81 @@
         b.setAttribute('aria-pressed', filterCat === id);
         if (color !== undefined) { const d = document.createElement('span'); d.className = 'dot'; if (color) d.style.background = color; b.append(d); }
         b.append(label);
-        b.onclick = () => { filterCat = id; saveTasks(); };
+        b.onclick = () => {
+          filterCat = id;
+          if (cats.some(c => c.id === id) && !newCats.includes(id)) newCats = [id];
+          saveTasks();
+        };
         return b;
       };
       bar.append(chip('all', 'All'));
       cats.forEach(c => bar.append(chip(c.id, c.name, c.color)));
-      if (tasks.some(t => !catOf(t))) bar.append(chip('none', 'No project', ''));
+      if (tasks.some(noCat)) bar.append(chip('none', 'No project', ''));
       const add = document.createElement('button');
       add.type = 'button'; add.className = 'chip add-chip'; add.textContent = '+ Project';
       add.onclick = addProject;
       bar.append(add);
 
-      // Project picker in the add form follows the filter.
-      const sel = $('task-cat');
-      const keep = filterCat !== 'all' ? (filterCat === 'none' ? '' : filterCat) : sel.value;
-      sel.innerHTML = '';
-      cats.forEach(c => sel.add(new Option(c.name, c.id)));
-      sel.add(new Option('No project', ''));
-      sel.value = [...sel.options].some(o => o.value === keep) ? keep : (cats[0] ? cats[0].id : '');
+      // Project picker in the add form: remembers the last selection; defaults to the filtered project.
+      if (newCats === null) newCats = cats[0] ? [cats[0].id] : [];
+      newCats = newCats.filter(id => cats.some(c => c.id === id));
+      const box = $('task-cats');
+      box.innerHTML = '';
+      box.append(projectPicker(newCats, (ids) => { newCats = ids; save('pomo-newcats', newCats); renderProjects(); }));
     }
 
-    function taskItem(t) {
+    // Toggle chips for choosing any number of projects. Calls onChange with the new id list.
+    function projectPicker(selected, onChange) {
+      const frag = document.createDocumentFragment();
+      cats.forEach(c => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'chip';
+        const on = selected.includes(c.id);
+        b.setAttribute('aria-pressed', on);
+        b.style.setProperty('--chip', c.color);
+        const d = document.createElement('span'); d.className = 'dot'; d.style.background = c.color;
+        b.append(d, c.name);
+        b.onclick = (e) => {
+          e.stopPropagation();
+          onChange(on ? selected.filter(id => id !== c.id) : [...selected, c.id]);
+        };
+        frag.append(b);
+      });
+      return frag;
+    }
+
+    // Left stripe: one color per project the task belongs to.
+    function stripe(cs) {
+      const step = 100 / cs.length;
+      return 'linear-gradient(to bottom, ' + cs.map((c, k) => c.color + ' ' + (k * step) + '% ' + ((k + 1) * step) + '%').join(', ') + ')';
+    }
+
+    function taskItem(t, groupId) {
       const i = tasks.indexOf(t);
-      const c = catOf(t);
+      const cs = catsOf(t);
       const li = document.createElement('li');
       li.className = 'task' + (t.id === activeId && !t.done ? ' active' : '') + (t.done ? ' done' : '');
-      if (c) li.style.setProperty('--cat', c.color);
+      const own = cs.find(c => c.id === groupId) || cs[0];
+      if (own) li.style.setProperty('--cat', own.color);
+      if (cs.length) li.style.background = stripe(cs) + ' left top / 5px 100% no-repeat, var(--bg)';
       li.title = t.done ? '' : 'Click to make this the current task';
 
       const cb = document.createElement('input');
       cb.type = 'checkbox'; cb.checked = t.done; cb.setAttribute('aria-label', 'Mark finished');
       cb.onclick = (e) => e.stopPropagation();
-      cb.onchange = () => { t.done = cb.checked; pickNextActive(t.cat); saveTasks(); render(); };
+      cb.onchange = () => { t.done = cb.checked; pickNextActive(t.cats); saveTasks(); render(); };
 
+      const main = document.createElement('span');
+      main.className = 'task-main';
       const title = document.createElement('span');
       title.className = 'task-title'; title.textContent = t.title;
+      main.append(title);
+      if (cs.length > 1) {
+        // Shared task: list every project it counts toward.
+        const tags = document.createElement('span'); tags.className = 'tags';
+        cs.forEach(c => { const g = document.createElement('span'); g.className = 'tag'; g.style.background = c.color; g.textContent = c.name; tags.append(g); });
+        main.append(tags);
+      }
 
       const count = document.createElement('span');
       count.className = 'task-count' + (t.spent > t.est ? ' over' : '');
@@ -491,39 +546,53 @@
         b.onclick = (e) => { e.stopPropagation(); fn(); saveTasks(); render(); };
         return b;
       };
-      // Move up within the same project (skips over tasks from other projects).
+      // Move up within the group it's shown in (skips over tasks not in that group).
+      const sameGroup = (x) => groupId ? hasCat(x, groupId) : noCat(x);
       const moveUp = () => {
         for (let j = i - 1; j >= 0; j--) {
-          if ((tasks[j].cat || null) === (t.cat || null)) { [tasks[j], tasks[i]] = [tasks[i], tasks[j]]; return; }
+          if (sameGroup(tasks[j])) { [tasks[j], tasks[i]] = [tasks[i], tasks[j]]; return; }
         }
       };
       actions.append(
         btn('−', 'Decrease estimate', () => { t.est = Math.max(1, t.est - 1); }),
         btn('+', 'Increase estimate', () => { t.est = Math.min(20, t.est + 1); }),
+        btn('🏷', 'Edit projects', () => { editingId = editingId === t.id ? null : t.id; }),
         btn('↑', 'Move up', moveUp),
-        btn('✕', 'Delete task', () => { tasks.splice(i, 1); pickNextActive(t.cat); })
+        btn('✕', 'Delete task', () => { tasks.splice(i, 1); pickNextActive(t.cats); })
       );
 
       li.onclick = () => { if (!t.done) { activeId = t.id; saveTasks(); render(); } };
-      li.append(cb, title, count, actions);
+      li.append(cb, main, count, actions);
+      if (editingId === t.id && groupId === editKey) {
+        const pick = document.createElement('div');
+        pick.className = 'pick';
+        pick.setAttribute('aria-label', 'Projects for this task');
+        pick.onclick = (e) => e.stopPropagation();
+        pick.append(projectPicker(t.cats, (ids) => { t.cats = ids; saveTasks(); render(); }));
+        li.append(pick);
+      }
       return li;
     }
 
     const sumLeft = (list) => list.filter(t => !t.done).reduce((n, t) => n + Math.max(0, t.est - t.spent), 0);
 
+    let editKey;   // group id in which the inline project editor is shown
     function renderTasks() {
       renderProjects();
       const list = $('task-list');
       list.innerHTML = '';
 
-      const groups = cats.map(c => ({ cat: c, items: tasks.filter(t => t.cat === c.id) }));
-      groups.push({ cat: null, items: tasks.filter(t => !catOf(t)) });
+      const groups = cats.map(c => ({ cat: c, items: tasks.filter(t => hasCat(t, c.id)) }));
+      groups.push({ cat: null, items: tasks.filter(noCat) });
       const shown = groups.filter(g =>
         filterCat === 'all' ? g.items.length : (filterCat === 'none' ? !g.cat : g.cat && g.cat.id === filterCat));
 
       if (!shown.length || !shown.some(g => g.items.length || g.cat)) {
         list.innerHTML = '<p class="empty">Add tasks and estimate how many pomodoros each needs.</p>';
       }
+      const editing = tasks.find(t => t.id === editingId);
+      const editGroup = editing && shown.find(g => g.items.includes(editing));
+      editKey = editGroup ? (editGroup.cat ? editGroup.cat.id : null) : undefined;
       shown.forEach(g => {
         const sec = document.createElement('div');
         sec.className = 'group';
@@ -550,7 +619,7 @@
           head.append(mk('✎', 'Rename project', () => renameProject(g.cat)), mk('✕', 'Delete project', () => deleteProject(g.cat)));
         }
         const ul = document.createElement('ul');
-        g.items.forEach(t => ul.append(taskItem(t)));
+        g.items.forEach(t => ul.append(taskItem(t, g.cat ? g.cat.id : null)));
         if (!g.items.length) ul.innerHTML = '<li class="empty">No tasks yet — add one above.</li>';
         sec.append(head, ul);
         list.append(sec);
@@ -587,11 +656,12 @@
       e.preventDefault();
       const title = $('task-title').value.trim();
       const est = Math.min(20, Math.max(1, parseInt($('task-est').value, 10) || 1));
-      const cat = $('task-cat').value || null;
+      const ids = [...newCats];
       if (!title) return;
-      tasks.push({ id: uid(), title, est, spent: 0, done: false, cat });
-      if (filterCat !== 'all' && filterCat !== (cat || 'none')) filterCat = cat || 'none';
-      pickNextActive(cat);
+      tasks.push({ id: uid(), title, est, spent: 0, done: false, cats: ids });
+      // Keep the new task visible: switch the filter if it wouldn't show up.
+      if (filterCat !== 'all' && !(filterCat === 'none' ? !ids.length : ids.includes(filterCat))) filterCat = 'all';
+      pickNextActive(ids);
       $('task-title').value = ''; $('task-est').value = 1;
       saveTasks(); render();
     };
