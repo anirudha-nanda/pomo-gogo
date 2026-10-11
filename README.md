@@ -8,6 +8,11 @@ A dependency-free Pomodoro timer in a single `index.html`.
 the current one. Each finished focus session counts toward it (e.g. `2/3 🍅`), and the plan shows the
 pomodoros left and an estimated finish time, including breaks.
 
+**Projects:** group tasks into projects (seeded with *Interview prep*, *NeetCode*, *TrustAnchor*;
+add, rename or delete your own). Each project has a color, its own done/planned/left counts, and an
+all-time total of pomodoros logged to it. Use the chips to filter the plan by project; the finish
+estimate follows the filter.
+
 Features: focus / short / long break modes, configurable durations, auto-start,
 completed-session counter, sound + desktop notification on finish, Space to start/pause,
 light/dark theme. Settings persist in `localStorage`.
